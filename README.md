@@ -40,7 +40,8 @@ Guess **where** you are. In time modes, also guess **when**.
 - **Live** + **Async** · Classic / Past / Future
 - Ablauf: Invite → Accept → blind pin → Reveal → Team-Vote → Ergebnis
 - **Firestore-Sync** (`coopRooms`, `coopInvites`) · Host-Banner **Start game** auf Home
-- **Match-Chat** während der Runde (Pop-up-Toasts + Chat-Panel, Firestore messages)
+- **Match-Chat** während der Runde (Pop-up-Toasts + Chat-Panel, Firestore messages) — Live-Sync zwischen beiden Spielern
+- Co-op **Reveal/Vote** wechselt automatisch wenn beide Pins gesetzt sind (kein Hängenbleiben auf „Waiting…“)
 - Verlassen beendet Match nicht für Partner
 - **Global Scoreboard** (Firestore sync, ein Eintrag pro Spieler/Modus)
 - **Animierte Avatare** an Map-Pins (Co-op & Solo)

@@ -99,9 +99,16 @@ service cloud.firestore {
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read, create: if signedIn()
+        allow read: if signedIn()
+          && isCoopParticipant(get(/databases/$(database)/documents/coopRooms/$(roomId)).data);
+        allow create: if signedIn()
           && isCoopParticipant(get(/databases/$(database)/documents/coopRooms/$(roomId)).data)
-          && request.resource.data.senderId == request.auth.uid;
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.roomId == roomId
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 280
+          && request.resource.data.at is number;
         allow update, delete: if false;
       }
     }

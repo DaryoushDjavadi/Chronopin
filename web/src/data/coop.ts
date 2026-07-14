@@ -86,6 +86,77 @@ function saveRooms(rooms: CoopRoom[]): void {
   safeStorageSet(COOP_ROOMS_KEY, JSON.stringify(rooms));
 }
 
+const PHASE_ORDER: CoopPhase[] = [
+  'invite_pending',
+  'explore',
+  'host_pinned',
+  'guest_pinned',
+  'reveal',
+  'vote',
+  'result',
+  'done',
+];
+
+function phaseRank(phase: CoopPhase): number {
+  const idx = PHASE_ORDER.indexOf(phase);
+  return idx >= 0 ? idx : 0;
+}
+
+function newerPin(a: CoopPin | null, b: CoopPin | null): CoopPin | null {
+  if (!a) return b;
+  if (!b) return a;
+  return (b.at ?? 0) >= (a.at ?? 0) ? b : a;
+}
+
+/** Merge local + remote room state without losing the partner's pin/vote. */
+export function mergeCoopRoomState(local: CoopRoom, remote: CoopRoom): CoopRoom {
+  const hostPin = newerPin(local.hostPin, remote.hostPin);
+  const guestPin = newerPin(local.guestPin, remote.guestPin);
+  const hostVote = remote.hostVote ?? local.hostVote;
+  const guestVote = remote.guestVote ?? local.guestVote;
+  const finalPin = remote.finalPin ?? local.finalPin;
+  const guestAccepted = local.guestAccepted || remote.guestAccepted;
+
+  const newer = remote.updatedAt >= local.updatedAt ? remote : local;
+  let phase = phaseRank(remote.phase) >= phaseRank(local.phase) ? remote.phase : local.phase;
+  if (phaseRank(newer.phase) > phaseRank(phase)) phase = newer.phase;
+
+  if (hostPin && guestPin && phaseRank(phase) < phaseRank('reveal')) {
+    phase = 'reveal';
+  } else if (newer.syncMode === 'async') {
+    if (hostPin && !guestPin && phaseRank(phase) < phaseRank('host_pinned')) {
+      phase = 'host_pinned';
+    }
+  }
+
+  if (hostVote && guestVote && phaseRank(phase) < phaseRank('result')) {
+    phase = 'result';
+  } else if ((hostVote || guestVote) && phaseRank(phase) >= phaseRank('reveal') && phaseRank(phase) < phaseRank('vote')) {
+    phase = 'vote';
+  }
+
+  return {
+    ...local,
+    ...newer,
+    hostPin,
+    guestPin,
+    hostVote,
+    guestVote,
+    finalPin,
+    guestAccepted,
+    phase,
+    updatedAt: Math.max(local.updatedAt, remote.updatedAt),
+  };
+}
+
+function persistCoopRoom(room: CoopRoom): void {
+  const rooms = loadRooms();
+  const idx = rooms.findIndex((r) => r.id === room.id);
+  if (idx >= 0) rooms[idx] = room;
+  else rooms.push(room);
+  saveRooms(rooms);
+}
+
 function loadInvites(): CoopInvite[] {
   try {
     const raw = localStorage.getItem(COOP_INVITES_KEY);
@@ -118,11 +189,8 @@ export function getActiveCoopRoom(): CoopRoom | undefined {
 }
 
 export function applyRemoteCoopRoom(room: CoopRoom): void {
-  const rooms = loadRooms();
-  const idx = rooms.findIndex((r) => r.id === room.id);
-  if (idx >= 0) rooms[idx] = room;
-  else rooms.push(room);
-  saveRooms(rooms);
+  const existing = getCoopRoom(room.id);
+  persistCoopRoom(existing ? mergeCoopRoomState(existing, room) : room);
 }
 
 export function applyRemoteCoopInvite(invite: CoopInvite): void {
@@ -134,10 +202,12 @@ export function applyRemoteCoopInvite(invite: CoopInvite): void {
 }
 
 export function updateCoopRoom(room: CoopRoom, options?: { skipCloud?: boolean }): void {
-  room.updatedAt = Date.now();
-  applyRemoteCoopRoom(room);
+  const existing = getCoopRoom(room.id);
+  const merged = existing ? mergeCoopRoomState(existing, room) : room;
+  merged.updatedAt = Date.now();
+  persistCoopRoom(merged);
   if (!options?.skipCloud) {
-    void pushCoopRoomToFirestore(room).catch((err) =>
+    void pushCoopRoomToFirestore(merged).catch((err) =>
       console.warn('[ChronoPin] Firestore coop room sync failed:', err),
     );
   }

@@ -135,6 +135,7 @@ import {
   pullCoopInviteFromFirestore,
   pullMyCoopRoomsFromFirestore,
   startMyCoopRoomsListener,
+  subscribeCoopRoom,
 } from './lib/firebase-coop';
 import { assetUrl } from './lib/asset-url';
 import {
@@ -257,6 +258,7 @@ let dailyCountdownTimer: ReturnType<typeof setInterval> | null = null;
 let libraryMarkers: maplibregl.Marker[] = [];
 let libraryMapInitToken = 0;
 let matchChatUnsub: (() => void) | null = null;
+let activeCoopRoomUnsub: (() => void) | null = null;
 let namePromptBound = false;
 let socialSearchTimer: ReturnType<typeof setTimeout> | null = null;
 let adminSearchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2316,11 +2318,16 @@ function startMatchChatListener(roomId: string): void {
   state.matchChatOpen = false;
   state.matchChatDraft = '';
 
-  void pullCoopMatchChat(roomId).catch((err) =>
-    console.warn('[ChronoPin] Match chat pull failed:', err),
-  );
+  void pullCoopMatchChat(roomId)
+    .then(() => {
+      if (state.coopRoomId === roomId && isMatchChatScreen()) patchMatchChatOverlay();
+    })
+    .catch((err) => console.warn('[ChronoPin] Match chat pull failed:', err));
 
-  const unsub = subscribeCoopMatchChat(roomId, handleIncomingMatchMessage);
+  const unsub = subscribeCoopMatchChat(roomId, (msg) => {
+    handleIncomingMatchMessage(msg);
+    if (state.matchChatOpen && state.coopRoomId === roomId) patchMatchChatOverlay();
+  });
   if (unsub) matchChatUnsub = unsub;
 }
 
@@ -3177,7 +3184,16 @@ function routeCoopScreen(): void {
 }
 
 function stopCoopFirestoreListener(): void {
-  /* global my-coop-rooms listener handles sync */
+  activeCoopRoomUnsub?.();
+  activeCoopRoomUnsub = null;
+}
+
+function startActiveCoopRoomListener(roomId: string): void {
+  stopCoopFirestoreListener();
+  const unsub = subscribeCoopRoom(roomId, () => {
+    if (state.isCoopRun && state.coopRoomId === roomId) routeCoopScreen();
+  });
+  if (unsub) activeCoopRoomUnsub = unsub;
 }
 
 function startCloudCoopSync(onChange?: () => void): void {
@@ -3256,6 +3272,7 @@ async function enterCoopRoom(roomId: string): Promise<void> {
     activeHint: null,
   };
   markPanoramaSeen(round.panoramaId);
+  startActiveCoopRoomListener(roomId);
   startMatchChatListener(roomId);
   routeCoopScreen();
 }

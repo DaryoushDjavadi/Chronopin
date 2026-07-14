@@ -21,9 +21,18 @@ function inviteRef(inviteId: string) {
   return doc(getFirebaseDb(), 'coopInvites', inviteId);
 }
 
+function coopRoomFirestorePayload(room: CoopRoom): Record<string, unknown> {
+  const payload: Record<string, unknown> = { ...room, syncedAt: Date.now() };
+  // Never push null pins/votes — merge would wipe the partner's data in Firestore.
+  for (const key of ['hostPin', 'guestPin', 'hostVote', 'guestVote', 'finalPin'] as const) {
+    if (payload[key] == null) delete payload[key];
+  }
+  return payload;
+}
+
 export async function pushCoopRoomToFirestore(room: CoopRoom): Promise<void> {
   if (!isFirebaseConfigured()) return;
-  await setDoc(roomRef(room.id), { ...room, syncedAt: Date.now() }, { merge: true });
+  await setDoc(roomRef(room.id), coopRoomFirestorePayload(room), { merge: true });
 }
 
 export async function pushCoopInviteToFirestore(invite: CoopInvite): Promise<void> {
