@@ -4380,7 +4380,7 @@ function goHome(): void {
 
 function getActivePanoSource(): { panorama: string; panoConfig?: Round['panoConfig'] } {
   if (state.screen === 'library-view') {
-    const items = getVisiblePanoramas();
+    const items = getLibraryViewItems();
     const idx = resolveLibraryIndex();
     const item = items[idx];
     if (!item) return { panorama: '' };
