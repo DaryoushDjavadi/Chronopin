@@ -122,6 +122,47 @@ export const HAIR_COLORS = [
   { id: 'blue', filter: 'hue-rotate(180deg) saturate(1.2) brightness(0.9)' },
 ] as const;
 
+/** Display hex for hair preset swatches in the editor UI. */
+export const HAIR_COLOR_HEX: Record<(typeof HAIR_COLORS)[number]['id'], string> = {
+  black: '#1a1a1a',
+  brown: '#6b4423',
+  blonde: '#d4a574',
+  red: '#a0522d',
+  gray: '#9ca3af',
+  blue: '#3d7ec9',
+};
+
+export const TOP_COLOR_PRESETS = [
+  '#3d7ec9',
+  '#c0392b',
+  '#27ae60',
+  '#8e44ad',
+  '#e67e22',
+  '#5d6d7e',
+  '#ecf0f1',
+  '#2a2a2a',
+] as const;
+
+export const PANTS_COLOR_PRESETS = [
+  '#3d7ec9',
+  '#1a8a7a',
+  '#8b6914',
+  '#2a2a2a',
+  '#5d6d7e',
+  '#c0392b',
+  '#27ae60',
+  '#ecf0f1',
+] as const;
+
+export const SHOES_COLOR_PRESETS = [
+  '#8b6914',
+  '#2a2a2a',
+  '#ecf0f1',
+  '#3d7ec9',
+  '#5d6d7e',
+  '#c0392b',
+] as const;
+
 export const PANTS = [
   {
     id: 'pants',
@@ -165,6 +206,10 @@ export const AVATAR_CATEGORIES: Array<{ id: AvatarCategory; label: string }> = [
 
 const LPC_BASE = '/avatar/lpc';
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+export function isHexColor(value: string): boolean {
+  return HEX_RE.test(value);
+}
 
 export function lpcAsset(file: string): string {
   return `${LPC_BASE}/${file}`;
@@ -219,7 +264,10 @@ export function normalizeAvatarConfig(raw: Partial<AvatarConfig> | null | undefi
     body,
     skin: SKIN_TONES.some((s) => s.id === raw.skin) ? raw.skin! : d.skin,
     hair: HAIR_STYLES.some((h) => h.id === raw.hair) ? raw.hair! : d.hair,
-    hairColor: HAIR_COLORS.some((c) => c.id === raw.hairColor) ? raw.hairColor! : d.hairColor,
+    hairColor:
+      HAIR_COLORS.some((c) => c.id === raw.hairColor) || isHexColor(raw.hairColor ?? '')
+        ? raw.hairColor!
+        : d.hairColor,
     headwear: HEADWEAR.some((h) => h.id === raw.headwear) ? raw.headwear! : d.headwear,
     top: TOPS.some((t) => t.id === raw.top) ? raw.top! : d.top,
     topColor: normalizeHexColor(raw.topColor, d.topColor, LEGACY_TOP_COLORS),
@@ -353,10 +401,14 @@ export function configWithCategoryOption(
 }
 
 export function configWithCustomColor(
-  kind: 'top' | 'pants' | 'shoes',
-  hex: string,
+  kind: 'top' | 'pants' | 'shoes' | 'hair',
+  value: string,
   base: AvatarConfig,
 ): AvatarConfig {
-  const color = normalizeHexColor(hex, DEFAULT_AVATAR_CONFIG[`${kind}Color`]);
+  if (kind === 'hair') {
+    const color = isHexColor(value) ? value.toLowerCase() : value;
+    return normalizeAvatarConfig({ ...base, hairColor: color });
+  }
+  const color = normalizeHexColor(value, DEFAULT_AVATAR_CONFIG[`${kind}Color`]);
   return normalizeAvatarConfig({ ...base, [`${kind}Color`]: color });
 }

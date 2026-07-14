@@ -21,7 +21,8 @@ Open http://localhost:5173 (also works on phone via network URL from Vite).
 - **Score** accumulates each round (distance + year accuracy)
 - **Game Over** screen when hearts reach zero
 - **Inventory** (explore/guess): binoculars, North Star — 1× per item per round
-- **Pixel avatar** editor + animated avatar in menu & game
+- **Pixel avatar** editor (preset colors + custom picker) + animated avatar in menu & game
+- **ChronoSwitch** logo on home · **Attributes / Credits** footer chip (LPC attribution)
 
 ## Panorama Library
 

@@ -97,6 +97,7 @@ export interface AppState {
   socialSelectedFriendId: string | null;
   socialMessageDraft: string;
   socialToast: string | null;
+  creditsOpen: boolean;
 }
 
 export interface ScoreResult {

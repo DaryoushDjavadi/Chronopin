@@ -25,8 +25,14 @@ The playable demo in [`web/`](../web/) uses only assets we can document and attr
 - Subset in `web/public/avatar/lpc/` — walk animation sheets (male + female)
 - Source: [Universal LPC Spritesheet Character Generator](https://github.com/LiberatedPixelCup/Universal-LPC-Spritesheet-Character-Generator)
 - Licenses: **CC-BY-SA 3.0**, **GPL 3.0**, **OGA-BY 3.0** (per layer — see [`web/public/avatar/lpc/LICENSE.md`](../web/public/avatar/lpc/LICENSE.md) and upstream CREDITS.csv)
-- **Before paid launch:** audit CREDITS.csv; prefer CC0/OGA-BY layers where possible; show in-app credits (editor footer links to LPC)
+- **Before paid launch:** audit CREDITS.csv; prefer CC0/OGA-BY layers where possible; show in-app credits
+- Home menu **Attributes / Credits** overlay lists body/head/face attribution (`data/avatar-credits.ts`); editor footer links to Universal LPC
 - ShareAlike may affect **redistributing modified sprite sheets** — document what you ship
+
+### App branding
+
+- **ChronoSwitch** logo: `logo/ChronoPinLogo.png` (source) + `web/public/ChronoPinLogo.png` (served as home logo & favicon)
+- Working product name in repo/docs may still say **ChronoPin** — logo artwork reads **ChronoSwitch**
 
 ### Maps & 360 viewer (runtime, not stored)
 

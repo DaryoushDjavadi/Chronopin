@@ -7,9 +7,14 @@ import {
   BODY_TYPES,
   DEFAULT_AVATAR_CONFIG,
   HAIR_COLORS,
+  HAIR_COLOR_HEX,
   HAIR_STYLES,
   HEADWEAR,
+  isHexColor,
+  PANTS_COLOR_PRESETS,
+  SHOES_COLOR_PRESETS,
   SKIN_TONES,
+  TOP_COLOR_PRESETS,
   TOPS,
   configWithCategoryOption,
   getCategoryLabel,
@@ -129,46 +134,128 @@ function renderCanvasOptions(
     .join('');
 }
 
-function renderHairColorRow(config: AvatarConfig): string {
-  return `
-    <div class="avatar-color-row">
-      <span class="avatar-color-label">Hair color</span>
-      <div class="avatar-color-swatches">
-        ${HAIR_COLORS.map(
-          (c) => `
-          <button
-            type="button"
-            class="avatar-color-dot ${config.hairColor === c.id ? 'selected' : ''}"
-            data-action="pick-hair-color"
-            data-value="${c.id}"
-            style="background:${c.id === 'brown' ? '#6b4423' : c.id === 'black' ? '#1a1a1a' : c.id === 'blonde' ? '#d4a574' : c.id === 'red' ? '#a0522d' : c.id === 'gray' ? '#9ca3af' : '#3d7ec9'}"
-            aria-label="${c.id}"
-            aria-pressed="${config.hairColor === c.id}"
-          ></button>`,
-        ).join('')}
-      </div>
-    </div>`;
+const COLOR_PICKER_ICON = `<svg class="avatar-color-custom-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M12 22a1 1 0 0 1-1-1v-2H8a2 2 0 0 1-2-2v-1a2 2 0 0 0-2-2v-1a6 6 0 0 1 11.2-3 7 7 0 0 1 .75 8.3"/>
+  <circle cx="12" cy="6" r="1"/>
+  <circle cx="8" cy="8" r="1"/>
+  <circle cx="6" cy="12" r="1"/>
+</svg>`;
+
+type ColorKind = 'hair' | 'top' | 'pants' | 'shoes';
+
+function normalizeHex(value: string): string {
+  return value.toLowerCase();
 }
 
-function renderCustomColorPicker(
-  kind: 'top' | 'pants' | 'shoes',
+function resolveHairPickerHex(hairColor: string): string {
+  if (isHexColor(hairColor)) return normalizeHex(hairColor);
+  return HAIR_COLOR_HEX[hairColor as keyof typeof HAIR_COLOR_HEX] ?? '#6b4423';
+}
+
+function isHairPresetSelected(hairColor: string, presetId: string): boolean {
+  return !isHexColor(hairColor) && hairColor === presetId;
+}
+
+function isClothingPresetSelected(currentHex: string, presetHex: string): boolean {
+  return normalizeHex(currentHex) === normalizeHex(presetHex);
+}
+
+function isCustomColorActive(
+  kind: ColorKind,
   config: AvatarConfig,
-): string {
-  const labels = { top: 'Shirt color', pants: 'Pants color', shoes: 'Shoes color' };
-  const value = config[`${kind}Color`];
-  return `
-    <div class="avatar-color-row avatar-color-picker-row">
-      <span class="avatar-color-label">${labels[kind]}</span>
-      <div class="avatar-color-picker-wrap">
-        <input
-          type="color"
-          class="avatar-color-input"
-          data-action="pick-custom-color"
+  presets: readonly string[],
+): boolean {
+  if (kind === 'hair') {
+    return isHexColor(config.hairColor);
+  }
+  const current = config[`${kind}Color`];
+  return !presets.some((hex) => isClothingPresetSelected(current, hex));
+}
+
+function renderColorSelectorRow(kind: ColorKind, config: AvatarConfig): string {
+  const labels: Record<ColorKind, string> = {
+    hair: 'Hair color',
+    top: 'Shirt color',
+    pants: 'Pants color',
+    shoes: 'Shoes color',
+  };
+
+  let presetButtons = '';
+  let pickerValue = '';
+  let customActive = false;
+
+  if (kind === 'hair') {
+    pickerValue = resolveHairPickerHex(config.hairColor);
+    customActive = isCustomColorActive('hair', config, []);
+    presetButtons = HAIR_COLORS.map((c) => {
+      const hex = HAIR_COLOR_HEX[c.id];
+      const selected = isHairPresetSelected(config.hairColor, c.id);
+      return `
+        <button
+          type="button"
+          class="avatar-color-dot ${selected ? 'selected' : ''}"
+          data-action="pick-preset-color"
+          data-kind="hair"
+          data-value="${c.id}"
+          style="background:${hex}"
+          aria-label="${c.id}"
+          aria-pressed="${selected}"
+        ></button>`;
+    }).join('');
+  } else {
+    const presets =
+      kind === 'top'
+        ? TOP_COLOR_PRESETS
+        : kind === 'pants'
+          ? PANTS_COLOR_PRESETS
+          : SHOES_COLOR_PRESETS;
+    const current = config[`${kind}Color`];
+    pickerValue = current;
+    customActive = isCustomColorActive(kind, config, presets);
+    presetButtons = presets
+      .map((hex) => {
+        const selected = isClothingPresetSelected(current, hex);
+        return `
+        <button
+          type="button"
+          class="avatar-color-dot ${selected ? 'selected' : ''}"
+          data-action="pick-preset-color"
           data-kind="${kind}"
-          value="${escapeHtml(value)}"
-          aria-label="${labels[kind]}"
-        />
-        <span class="avatar-color-hex">${escapeHtml(value)}</span>
+          data-value="${hex}"
+          style="background:${hex}"
+          aria-label="${hex}"
+          aria-pressed="${selected}"
+        ></button>`;
+      })
+      .join('');
+  }
+
+  const customInner = customActive
+    ? `<span class="avatar-color-custom-fill" style="background:${escapeHtml(pickerValue)}"></span>`
+    : COLOR_PICKER_ICON;
+
+  return `
+    <div class="avatar-color-row">
+      <span class="avatar-color-label">${labels[kind]}</span>
+      <div class="avatar-color-swatches">
+        ${presetButtons}
+        <label
+          class="avatar-color-custom ${customActive ? 'selected' : ''}"
+          title="Pick custom color"
+        >
+          <input
+            type="color"
+            class="avatar-color-input"
+            data-action="pick-custom-color"
+            data-kind="${kind}"
+            value="${escapeHtml(pickerValue)}"
+            aria-label="Custom ${labels[kind].toLowerCase()}"
+          />
+          <span class="avatar-color-custom-ring" aria-hidden="true">
+            <span class="avatar-color-custom-face">${customInner}</span>
+          </span>
+          <span class="avatar-color-custom-label">Custom</span>
+        </label>
       </div>
     </div>`;
 }
@@ -182,17 +269,17 @@ function renderCategoryBody(category: AvatarCategory, config: AvatarConfig): str
     case 'hair':
       return `
         <div class="avatar-opt-grid">${renderCanvasOptions(category, config, HAIR_STYLES)}</div>
-        ${config.hair !== 'none' ? renderHairColorRow(config) : ''}`;
+        ${config.hair !== 'none' ? renderColorSelectorRow('hair', config) : ''}`;
     case 'headwear':
       return `<div class="avatar-opt-grid">${renderCanvasOptions(category, config, HEADWEAR)}</div>`;
     case 'top':
       return `
         <div class="avatar-opt-grid">${renderCanvasOptions(category, config, TOPS)}</div>
-        ${renderCustomColorPicker('top', config)}`;
+        ${renderColorSelectorRow('top', config)}`;
     case 'pants':
-      return renderCustomColorPicker('pants', config);
+      return renderColorSelectorRow('pants', config);
     case 'shoes':
-      return renderCustomColorPicker('shoes', config);
+      return renderColorSelectorRow('shoes', config);
   }
 }
 

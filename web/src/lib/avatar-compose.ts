@@ -4,6 +4,7 @@ import {
   HAIR_COLORS,
   HAIR_STYLES,
   HEADWEAR,
+  isHexColor,
   PANTS,
   SHOES,
   SKIN_TONES,
@@ -146,10 +147,14 @@ async function composeToCanvas(
   const showHair = cfg.hair !== 'none' && (cfg.headwear === 'none' || cfg.headwear === 'hood');
   if (showHair) {
     const hairStyle = HAIR_STYLES.find((h) => h.id === cfg.hair);
-    const hairColor = HAIR_COLORS.find((c) => c.id === cfg.hairColor);
     if (hairStyle?.file) {
       const hair = await loadImage(lpcAsset(hairStyle.file));
-      drawFrame(ctx, hair, frameIndex, SOUTH_ROW, 0, 0, size, hairColor?.filter ?? 'none');
+      if (isHexColor(cfg.hairColor)) {
+        tintLayer(ctx, hair, cfg.hairColor, frameIndex);
+      } else {
+        const hairColor = HAIR_COLORS.find((c) => c.id === cfg.hairColor);
+        drawFrame(ctx, hair, frameIndex, SOUTH_ROW, 0, 0, size, hairColor?.filter ?? 'none');
+      }
     }
   }
 

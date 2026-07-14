@@ -191,7 +191,11 @@ export function renderSocialOverlayHtml(options: {
         ${tab === 'friends' ? renderFriendsTab() : renderAddTab()}`;
 
   return `
-    <div class="social-overlay ${open ? 'open' : ''}" aria-hidden="${!open}" data-social-overlay">
+    <div
+      class="social-overlay ${open ? 'open' : ''}"
+      aria-hidden="${!open}"
+      data-social-overlay
+    >
       <div class="social-backdrop" data-action="close-social" aria-hidden="true"></div>
       <div class="social-panel" role="dialog" aria-label="Friends" aria-modal="true">
         <div class="social-frame">

@@ -54,6 +54,7 @@ onboarding → home → explore → guess → result → (next round | gameover)
 **Overlays (not separate screens):**
 - **Inventory** — explore/guess only (`lib/inventory-ui.ts`)
 - **Social / Friends** — home only (`lib/social-ui.ts`, mock data in `data/social.ts`)
+- **Attributes / Credits** — home only (`lib/credits-ui.ts`, data in `data/avatar-credits.ts`)
 - **Avatar editor** — accordion UI (`lib/avatar-editor-ui.ts`)
 
 ---
@@ -71,6 +72,7 @@ web/src/
 │   ├── lpc-catalog.ts   # Avatar config + LPC file map
 │   ├── inventory.ts     # Items + slot grid
 │   ├── social.ts        # Mock friends, chat, requests
+│   ├── avatar-credits.ts # LPC attribution blocks (credits overlay)
 │   └── landmarks.ts     # Binocular hint places
 └── lib/
     ├── geo.ts           # Haversine, scoring, hearts UI
@@ -80,9 +82,10 @@ web/src/
     ├── library.ts       # Hidden panorama IDs
     ├── avatar-compose.ts / avatar-animate.ts / avatar-editor-ui.ts
     ├── inventory-ui.ts / inventory-hints.ts
-    └── social-ui.ts
+    ├── social-ui.ts / credits-ui.ts
 
 web/public/
+├── ChronoPinLogo.png    # ChronoSwitch branding (home + favicon)
 ├── panoramas/           # 29 JPG equirectangular (see LICENSE.md)
 └── avatar/lpc/          # LPC walk sprite sheets (see LICENSE.md)
 ```
@@ -108,9 +111,11 @@ No schema versioning yet — breaking changes require manual clear or migration 
 
 - Config: `AvatarConfig` in `lpc-catalog.ts` (`body`, `skin`, `hair`, `topColor` as hex, …)
 - Compositor draws LPC walk frames (south-facing row) onto canvas
+- **Color UI:** preset swatches + native custom picker (top/pants/shoes as hex; hair presets or custom hex tint)
 - **Idle** animation: menu / editor (`avatar-idle` class)
 - **Walk** animation: in-game avatar button (`avatar-walk` class)
 - Male + female body/head/torso/legs/feet sheets in `public/avatar/lpc/`
+- In-app LPC credits: home **Attributes / Credits** overlay + editor footer link
 
 ---
 

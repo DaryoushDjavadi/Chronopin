@@ -26,9 +26,13 @@ Guess **where** you are. In time modes, also guess **when**.
 **Character & Avatar**
 - Pixel-Avatar-Editor (**Universal LPC**): Skin, Haare, Kopfbedeckung, Top, Hosen, Schuhe
 - **Male / Female** Körpertyp
-- **Color Picker** für Top, Hosen, Schuhe (freie Hex-Farben)
+- **Preset-Farben + Custom Color Picker** (Haare, Top, Hosen, Schuhe) — erkennbarer Regenbogen-Picker neben Swatches
 - **Reset** + **🎲 Random** im Editor
 - **Idle-Animation** (Menü/Editor) · **Walk-Animation** (Avatar-Button im Spiel)
+
+**Branding & Rechte**
+- **ChronoSwitch**-Logo im Home (`logo/ChronoPinLogo.png`, kein separater „ChronoPin“-Schriftzug mehr)
+- Home → **Attributes / Credits** — LPC-Attribution (Body, Head, Face) im Overlay
 
 **Inventar**
 - 3×3-Inventar (Pixel-Stil): Fernglas, North Star + Platzhalter (Compass, Map, Time Shard)

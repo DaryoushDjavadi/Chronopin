@@ -27,6 +27,7 @@ import {
   sendFriendRequestByName,
   sendMessageToFriend,
 } from './data/social';
+import { renderCreditsOverlayHtml } from './lib/credits-ui';
 import { renderSocialOverlayHtml } from './lib/social-ui';
 import { getBinocularHint, getStarHint } from './lib/inventory-hints';
 import {
@@ -88,6 +89,7 @@ let state: AppState = {
   socialSelectedFriendId: null,
   socialMessageDraft: '',
   socialToast: null,
+  creditsOpen: false,
 };
 
 let scoreSavedForSession = false;
@@ -158,8 +160,14 @@ function renderHome(): string {
             ${pendingSocial > 0 ? `<span class="social-btn-badge">${pendingSocial}</span>` : ''}
           </button>
         </div>
-        <div class="logo-mark">CP</div>
-        <h1>ChronoPin</h1>
+        <img
+          class="app-logo"
+          src="/ChronoPinLogo.png"
+          alt="ChronoSwitch"
+          width="220"
+          height="220"
+          decoding="async"
+        />
         <p class="tagline">Guess <strong>where</strong>. In time modes, also guess <strong>when</strong>.</p>
         <span class="badge">Web prototype · ${panoCount} panoramas</span>
       </header>
@@ -219,10 +227,12 @@ function renderHome(): string {
         </div>
       </section>
 
-      <footer class="footer-note">
-        Map: MapLibre + OpenFreeMap · Panoramas: Wikimedia Commons
+      <footer class="home-footer">
+        <p class="footer-note">Map: MapLibre + OpenFreeMap · Panoramas: Wikimedia Commons</p>
+        <button type="button" class="credits-chip" data-action="credits">Attributes / Credits</button>
       </footer>
       ${renderSocialOverlay()}
+      ${renderCreditsOverlay()}
     </div>
   `;
 }
@@ -477,6 +487,16 @@ function renderHintBanner(): string {
   `;
 }
 
+function renderCreditsOverlay(): string {
+  return renderCreditsOverlayHtml(state.creditsOpen);
+}
+
+function setCreditsOpen(open: boolean): void {
+  state.creditsOpen = open;
+  if (open) state.socialOpen = false;
+  if (state.screen === 'home') patchHomeOverlays();
+}
+
 function renderSocialOverlay(): string {
   return renderSocialOverlayHtml({
     open: state.socialOpen,
@@ -490,34 +510,44 @@ function renderSocialOverlay(): string {
 
 function setSocialOpen(open: boolean): void {
   state.socialOpen = open;
+  if (open) state.creditsOpen = false;
   if (!open) {
     state.socialView = 'list';
     state.socialSelectedFriendId = null;
     state.socialMessageDraft = '';
     state.socialToast = null;
   }
-  if (state.screen === 'home') patchHomeSocial();
+  if (state.screen === 'home') patchHomeOverlays();
 }
 
 function showSocialToast(text: string): void {
   state.socialToast = text;
-  patchHomeSocial();
+  patchHomeOverlays();
   setTimeout(() => {
     if (state.socialToast === text) {
       state.socialToast = null;
-      if (state.screen === 'home' && state.socialOpen) patchHomeSocial();
+      if (state.screen === 'home' && state.socialOpen) patchHomeOverlays();
     }
   }, 2600);
 }
 
-function patchHomeSocial(): void {
+function patchHomeOverlays(): void {
   const screen = app.querySelector('.screen-home');
   if (!screen) return;
 
-  const overlayHtml = renderSocialOverlay();
-  const existing = screen.querySelector('[data-social-overlay]');
-  if (existing) existing.outerHTML = overlayHtml;
-  else screen.insertAdjacentHTML('beforeend', overlayHtml);
+  const socialHtml = renderSocialOverlay();
+  screen.querySelectorAll('.social-overlay ~ .social-overlay').forEach((el) => el.remove());
+  const socialEl =
+    screen.querySelector('[data-social-overlay]') ?? screen.querySelector('.social-overlay');
+  if (socialEl) socialEl.outerHTML = socialHtml;
+  else screen.insertAdjacentHTML('beforeend', socialHtml);
+
+  const creditsHtml = renderCreditsOverlay();
+  screen.querySelectorAll('.credits-overlay ~ .credits-overlay').forEach((el) => el.remove());
+  const creditsEl =
+    screen.querySelector('[data-credits-overlay]') ?? screen.querySelector('.credits-overlay');
+  if (creditsEl) creditsEl.outerHTML = creditsHtml;
+  else screen.insertAdjacentHTML('beforeend', creditsHtml);
 
   const badge = screen.querySelector('.social-btn-badge');
   const pending = getPendingRequestCount();
@@ -548,7 +578,7 @@ function syncSocialOnlineTimer(): void {
   }
   if (state.screen === 'home' && state.socialOpen) {
     socialOnlineTimer = setInterval(() => {
-      if (state.screen === 'home' && state.socialOpen) patchHomeSocial();
+      if (state.screen === 'home' && state.socialOpen) patchHomeOverlays();
       else syncSocialOnlineTimer();
     }, 5000);
   }
@@ -578,12 +608,27 @@ function bindSocialEventsOnce(): void {
       return;
     }
 
+    if (target.closest('[data-action="credits"]')) {
+      if (state.screen === 'home') {
+        e.preventDefault();
+        setCreditsOpen(!state.creditsOpen);
+      }
+      return;
+    }
+
+    if (target.closest('[data-action="close-credits"]')) {
+      e.preventDefault();
+      e.stopPropagation();
+      setCreditsOpen(false);
+      return;
+    }
+
     const tabBtn = target.closest<HTMLElement>('[data-social-tab]');
     if (tabBtn && state.socialOpen) {
       state.socialTab = tabBtn.dataset.socialTab as 'friends' | 'add';
       state.socialView = 'list';
       state.socialSelectedFriendId = null;
-      patchHomeSocial();
+      patchHomeOverlays();
       return;
     }
 
@@ -592,7 +637,7 @@ function bindSocialEventsOnce(): void {
       state.socialView = 'friend';
       state.socialSelectedFriendId = friendBtn.dataset.friend ?? null;
       state.socialMessageDraft = '';
-      patchHomeSocial();
+      patchHomeOverlays();
       return;
     }
 
@@ -600,7 +645,7 @@ function bindSocialEventsOnce(): void {
       state.socialView = 'list';
       state.socialSelectedFriendId = null;
       state.socialMessageDraft = '';
-      patchHomeSocial();
+      patchHomeOverlays();
       return;
     }
 
@@ -640,7 +685,7 @@ function bindSocialEventsOnce(): void {
     const msg = sendMessageToFriend(state.socialSelectedFriendId, text);
     if (msg) {
       state.socialMessageDraft = '';
-      patchHomeSocial();
+      patchHomeOverlays();
     }
   });
 }
@@ -980,24 +1025,25 @@ function bindAvatarEditorEvents(): void {
     });
   });
 
-  app.querySelectorAll('[data-action="pick-hair-color"]').forEach((btn) => {
+  app.querySelectorAll('[data-action="pick-preset-color"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.avatarConfig = {
-        ...state.avatarConfig,
-        hairColor: (btn as HTMLElement).dataset.value!,
-      };
+      const el = btn as HTMLElement;
+      const kind = el.dataset.kind as 'hair' | 'top' | 'pants' | 'shoes';
+      const value = el.dataset.value!;
+      state.avatarConfig = configWithCustomColor(kind, value, state.avatarConfig);
       patchAvatarEditor();
     });
   });
 
   app.querySelectorAll<HTMLInputElement>('[data-action="pick-custom-color"]').forEach((input) => {
     input.addEventListener('input', () => {
-      const kind = input.dataset.kind as 'top' | 'pants' | 'shoes';
+      const kind = input.dataset.kind as 'hair' | 'top' | 'pants' | 'shoes';
       state.avatarConfig = configWithCustomColor(kind, input.value, state.avatarConfig);
-      const hexLabel = input.parentElement?.querySelector('.avatar-color-hex');
-      if (hexLabel) hexLabel.textContent = input.value.toLowerCase();
       updateHeroAvatarCanvases(app, state.avatarConfig);
       void hydrateAvatarCanvases(app);
+    });
+    input.addEventListener('change', () => {
+      patchAvatarEditor();
     });
   });
 
@@ -1473,6 +1519,7 @@ function goHome(): void {
     socialSelectedFriendId: null,
     socialMessageDraft: '',
     socialToast: null,
+    creditsOpen: false,
   };
   scoreSavedForSession = false;
   gameStatsRecorded = false;
