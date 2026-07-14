@@ -26,7 +26,7 @@ export function haversineKm(
 export function formatDistance(km: number): string {
   if (km < 1) return `${Math.round(km * 1000)} m`;
   if (km < 100) return `${km.toFixed(1)} km`;
-  return `${Math.round(km).toLocaleString('de-DE')} km`;
+  return `${Math.round(km).toLocaleString('en-GB')} km`;
 }
 
 export function scoreGuess(round: Round, guess: Guess): ScoreResult {

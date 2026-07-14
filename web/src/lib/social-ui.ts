@@ -1,14 +1,21 @@
 import { renderAvatar } from '../data/avatars';
+import type { AvatarConfig } from '../data/lpc-catalog';
+import type { CoopSyncMode } from '../data/coop';
+import { getCoopInvitesWithFriend, getReadyCoopRoomWithFriend } from '../data/coop';
+import type { GameMode } from '../types';
 import {
   type FriendProfile,
   formatMessageTime,
+  formatRequestTime,
   getFriendById,
   getFriends,
   getMessagesForFriend,
   getPendingRequestCount,
   getPendingRequests,
   isFriendOnline,
+  searchUsers,
 } from '../data/social';
+import { renderCoopInvitePanel } from './coop-ui';
 
 export type SocialTab = 'friends' | 'add';
 export type SocialView = 'list' | 'friend';
@@ -44,44 +51,102 @@ function renderFriendRow(friend: FriendProfile): string {
 function renderFriendsTab(): string {
   const friends = getFriends();
   if (friends.length === 0) {
-    return `<div class="social-empty"><p>No friends yet. Add someone from the Requests tab.</p></div>`;
+    return `<div class="social-empty"><p>No friends yet. Add someone from the Add / Requests tab.</p></div>`;
   }
   return `<div class="social-friend-list">${friends.map(renderFriendRow).join('')}</div>`;
 }
 
-function renderAddTab(): string {
+function renderSearchResults(query: string, cloudResults: { uid: string; name: string; avatarConfig: AvatarConfig }[]): string {
+  const results = searchUsers(query);
+  const q = query.trim();
+  if (q.length < 2) {
+    return `<p class="social-search-hint">Type at least 2 characters to search players.</p>`;
+  }
+
+  const cloudRows =
+    cloudResults.length > 0
+      ? cloudResults
+          .map(
+            (u) => `
+        <div class="social-search-row">
+          <span class="social-search-avatar">${renderAvatar(u.avatarConfig, 'avatar avatar-sm')}</span>
+          <span class="social-search-meta">
+            <strong>${escapeHtml(u.name)}</strong>
+            <span>Online player</span>
+          </span>
+          <button type="button" class="btn btn-primary btn-sm" data-action="send-request-to" data-source="cloud" data-user="${u.uid}" data-name="${escapeHtml(u.name)}">Add</button>
+        </div>`,
+          )
+          .join('')
+      : '';
+
+  const demoRows =
+    results.length > 0
+      ? results
+          .map(
+            (u) => `
+        <div class="social-search-row">
+          <span class="social-search-avatar">${renderAvatar(u.avatarConfig, 'avatar avatar-sm')}</span>
+          <span class="social-search-meta">
+            <strong>${escapeHtml(u.name)}</strong>
+            <span>${escapeHtml(u.tagline)}</span>
+          </span>
+          <button type="button" class="btn btn-primary btn-sm" data-action="send-request-to" data-source="demo" data-user="${u.id}">Add</button>
+        </div>`,
+          )
+          .join('')
+      : '';
+
+  if (!cloudRows && !demoRows) {
+    return `<p class="social-empty-inline">No players found for “${escapeHtml(q)}”. Both need a profile saved first.</p>`;
+  }
+
+  return `
+    <div class="social-search-results">
+      <p class="social-search-label">Search results</p>
+      ${cloudRows}
+      ${demoRows}
+    </div>`;
+}
+
+function renderAddTab(addNameDraft: string, cloudResults: { uid: string; name: string; avatarConfig: AvatarConfig }[]): string {
   const requests = getPendingRequests();
+  const incoming = requests.filter((r) => r.direction === 'incoming');
+  const outgoing = requests.filter((r) => r.direction === 'outgoing');
+
   return `
     <div class="social-add-section">
-      <label class="field-label" for="social-add-name">Add friend</label>
+      <label class="field-label" for="social-add-name">Find friends</label>
       <div class="social-add-row">
         <input
           id="social-add-name"
           class="text-input social-add-input"
-          type="text"
+          type="search"
           maxlength="24"
-          placeholder="Username"
+          placeholder="Search by name…"
+          value="${escapeHtml(addNameDraft)}"
           autocomplete="off"
         />
-        <button type="button" class="btn btn-primary social-add-btn" data-action="send-friend-request">Send</button>
+        <button type="button" class="btn btn-primary social-add-btn" data-action="send-friend-request">Add</button>
       </div>
-      <p class="social-add-hint">Firebase sync coming later · demo sends a local toast only.</p>
+      ${renderSearchResults(addNameDraft, cloudResults)}
+      <p class="social-add-hint">Search players by name to send a friend request.</p>
     </div>
 
     <div class="social-requests-section">
-      <h3 class="social-subhead">Friend requests</h3>
+      <h3 class="social-subhead">Incoming requests</h3>
       ${
-        requests.length === 0
-          ? `<p class="social-empty-inline">No pending requests.</p>`
+        incoming.length === 0
+          ? `<p class="social-empty-inline">No incoming requests.</p>`
           : `<div class="social-request-list">
-              ${requests
+              ${incoming
                 .map(
                   (req) => `
                 <div class="social-request-card">
                   <span class="social-request-avatar">${renderAvatar(req.avatarConfig, 'avatar avatar-sm')}</span>
                   <span class="social-request-meta">
                     <strong>${escapeHtml(req.name)}</strong>
-                    <span>Sent ${escapeHtml(req.sentAt)}</span>
+                    <span>Sent ${escapeHtml(formatRequestTime(req.sentAt))}</span>
                   </span>
                   <div class="social-request-actions">
                     <button type="button" class="btn btn-primary btn-sm" data-action="accept-request" data-request="${req.id}">Accept</button>
@@ -92,10 +157,67 @@ function renderAddTab(): string {
                 .join('')}
             </div>`
       }
+
+      <h3 class="social-subhead">Sent requests</h3>
+      ${
+        outgoing.length === 0
+          ? `<p class="social-empty-inline">No pending sent requests.</p>`
+          : `<div class="social-request-list">
+              ${outgoing
+                .map(
+                  (req) => `
+                <div class="social-request-card outgoing">
+                  <span class="social-request-avatar">${renderAvatar(req.avatarConfig, 'avatar avatar-sm')}</span>
+                  <span class="social-request-meta">
+                    <strong>${escapeHtml(req.name)}</strong>
+                    <span>Pending · ${escapeHtml(formatRequestTime(req.sentAt))}</span>
+                  </span>
+                  <button type="button" class="btn btn-secondary btn-sm" data-action="cancel-request" data-request="${req.id}">Cancel</button>
+                </div>`,
+                )
+                .join('')}
+            </div>`
+      }
     </div>`;
 }
 
-function renderFriendDetail(friendId: string, messageDraft: string): string {
+function renderFriendCoopSection(friendId: string, myPlayerId: string): string {
+  const readyRoom = getReadyCoopRoomWithFriend(friendId, myPlayerId);
+  const rawInvites = getCoopInvitesWithFriend(friendId, myPlayerId);
+  const invites = rawInvites.map((inv) => ({
+    id: inv.id,
+    fromName: inv.fromName,
+    syncMode: inv.syncMode as CoopSyncMode,
+    gameMode: inv.gameMode as GameMode,
+    direction: inv.fromPlayerId === myPlayerId ? ('outgoing' as const) : ('incoming' as const),
+  }));
+
+  if (readyRoom) {
+    return `
+      <section class="social-coop-section">
+        <h4>Co-op ready</h4>
+        <p class="social-coop-desc">${escapeHtml(readyRoom.guestName)} accepted · ${escapeHtml(readyRoom.roundTitle)}</p>
+        <button type="button" class="btn btn-primary coop-invite-btn" data-action="start-coop-room" data-room="${readyRoom.id}">
+          Start Co-op game
+        </button>
+      </section>`;
+  }
+
+  if (invites.length === 0) {
+    return `
+      <section class="social-coop-section">
+        <h4>Co-op Decide</h4>
+        <p class="social-coop-desc">Play together — live or async over several days.</p>
+        <button type="button" class="btn btn-primary coop-invite-btn" data-action="open-coop-setup" data-friend="${friendId}">
+          Send Co-op invite
+        </button>
+      </section>`;
+  }
+
+  return renderCoopInvitePanel(friendId, invites);
+}
+
+function renderFriendDetail(friendId: string, messageDraft: string, myPlayerId: string): string {
   const friend = getFriendById(friendId);
   if (!friend) {
     return `<div class="social-empty"><p>Friend not found.</p></div>`;
@@ -119,17 +241,19 @@ function renderFriendDetail(friendId: string, messageDraft: string): string {
         <span class="social-detail-status ${online ? 'is-online' : 'is-offline'}">${online ? 'Online now' : 'Offline'}</span>
       </div>
 
+      ${renderFriendCoopSection(friendId, myPlayerId)}
+
       <section class="social-stats-panel">
         <h4>Stats</h4>
         <div class="social-stats-grid">
           <div class="social-stat"><span>Games</span><strong>${s.gamesPlayed}</strong></div>
           <div class="social-stat"><span>W / L</span><strong>${s.gamesWon} / ${s.gamesLost}</strong></div>
           <div class="social-stat"><span>Win rate</span><strong>${s.winRate}%</strong></div>
-          <div class="social-stat"><span>Best run</span><strong>${s.bestRunScore.toLocaleString('de-DE')}</strong></div>
+          <div class="social-stat"><span>Best run</span><strong>${s.bestRunScore.toLocaleString('en-GB')}</strong></div>
           <div class="social-stat"><span>Strongest</span><strong>${escapeHtml(s.strongestRegion)}</strong></div>
           <div class="social-stat"><span>Avg. miss</span><strong>${s.avgDistanceKm} km</strong></div>
         </div>
-        <p class="social-member-since">Playing since ${new Date(friend.memberSince).toLocaleDateString('de-DE')}</p>
+        <p class="social-member-since">Playing since ${new Date(friend.memberSince).toLocaleDateString('en-GB')}</p>
       </section>
 
       <section class="social-chat">
@@ -155,7 +279,7 @@ function renderFriendDetail(friendId: string, messageDraft: string): string {
             class="text-input social-chat-input"
             name="message"
             maxlength="280"
-            placeholder="${online ? 'Write a message…' : 'Leave a message (offline)…'}"
+            placeholder="${online ? 'Write a message…' : 'Write a message…'}"
             value="${escapeHtml(messageDraft)}"
             autocomplete="off"
           />
@@ -171,14 +295,18 @@ export function renderSocialOverlayHtml(options: {
   view: SocialView;
   selectedFriendId: string | null;
   messageDraft: string;
+  addNameDraft: string;
   toast: string | null;
+  myPlayerId: string;
+  cloudSearchResults: { uid: string; name: string; avatarConfig: AvatarConfig }[];
 }): string {
-  const { open, tab, view, selectedFriendId, messageDraft, toast } = options;
+  const { open, tab, view, selectedFriendId, messageDraft, addNameDraft, toast, myPlayerId, cloudSearchResults } =
+    options;
   const pending = getPendingRequestCount();
 
   const body =
     view === 'friend' && selectedFriendId
-      ? renderFriendDetail(selectedFriendId, messageDraft)
+      ? renderFriendDetail(selectedFriendId, messageDraft, myPlayerId)
       : `
         <div class="social-segmented" role="tablist">
           <button type="button" class="segmented-btn ${tab === 'friends' ? 'active' : ''}" data-social-tab="friends" role="tab" aria-selected="${tab === 'friends'}">
@@ -188,12 +316,13 @@ export function renderSocialOverlayHtml(options: {
             Add / Requests${pending > 0 ? `<span class="social-tab-badge">${pending}</span>` : ''}
           </button>
         </div>
-        ${tab === 'friends' ? renderFriendsTab() : renderAddTab()}`;
+        ${tab === 'friends' ? renderFriendsTab() : renderAddTab(addNameDraft, cloudSearchResults)}`;
 
   return `
     <div
       class="social-overlay ${open ? 'open' : ''}"
       aria-hidden="${!open}"
+      ${open ? '' : 'inert'}
       data-social-overlay
     >
       <div class="social-backdrop" data-action="close-social" aria-hidden="true"></div>

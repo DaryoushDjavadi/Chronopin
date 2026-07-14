@@ -1,11 +1,34 @@
 # ChronoPin — Web Prototype (technical)
 
-Playable browser prototype under [`web/`](../web/). Validates core loop before Expo/React Native.
+Playable browser prototype under [`web/`](../web/). Validates core loop + Firebase multiplayer before Expo/React Native.
 
-**Run:** `cd web && npm install && npm run dev` → http://localhost:5173
+**Run:** `cd web && npm install && npm run dev` → **http://localhost:5173**
 
-**Product & roadmap:** [`README.md`](../README.md#zuletzt-umgesetzt--roadmap-schnell-nachschlagen)  
-**Licensing:** [`TECH_AND_RIGHTS.md`](./TECH_AND_RIGHTS.md#web-prototype--current-bundled-assets)
+**Product & roadmap:** [`README.md`](../README.md)  
+**Strato deploy:** [`STRATO_DEPLOY.md`](./STRATO_DEPLOY.md)  
+**Licensing:** [`TECH_AND_RIGHTS.md`](./TECH_AND_RIGHTS.md)
+
+---
+
+## Firebase
+
+**Project:** `chronopin-2bdce` · config via `web/.env` (`VITE_FIREBASE_*`).
+
+| Collection | Purpose | Sync |
+|---|---|---|
+| `users/{uid}` | Profile (name, avatar, searchName) | Boot + profile save |
+| `loginNames/{searchName}` | Unique display name → uid | Login + profile save |
+| `friendRequests/{id}` | Pending friend requests | Social sync |
+| `friendships/{id}` | Accepted pairs (userA, userB) | On accept |
+| `coopRooms/{roomId}` | Full `CoopRoom` document | Every update + `onSnapshot` |
+| `coopRooms/{roomId}/messages/{id}` | In-match chat | Realtime listener |
+| `coopInvites/{inviteId}` | Co-op game invites | Create/update + incoming listener |
+
+**Auth:** Anonymous sign-in at bootstrap. `playerId` = Firebase `uid`.
+
+**Deploy:** [`firestore.rules`](../firestore.rules) + [`firestore.indexes.json`](../firestore.indexes.json) via `firebase deploy --only firestore`.
+
+Without `.env`, app runs **offline** using `localStorage` only.
 
 ---
 
@@ -15,165 +38,140 @@ Playable browser prototype under [`web/`](../web/). Validates core loop before E
 |---|---|
 | Build | Vite 6 + TypeScript (strict) |
 | 360° viewer | [Pannellum](https://pannellum.org/) (CDN) |
-| Guess map | MapLibre GL JS + [OpenFreeMap](https://openfreemap.org/) Liberty style |
-| UI | Vanilla TS + single `styles.css` (~2.6k lines) |
-| Persistence | `localStorage` only (no backend yet) |
+| Guess map | MapLibre GL JS + [OpenFreeMap](https://openfreemap.org/) |
+| UI | Vanilla TS + `styles.css` |
+| Persistence | `localStorage` + Firebase Auth/Firestore |
 | Avatars | Universal LPC sprite subset (canvas compositor) |
+| Dialogs | In-app confirm/alert (`lib/dialog-ui.ts`) |
 
 ---
 
 ## Game flow
 
+### Login
+
 ```
-onboarding → home → explore → guess → result → (next round | gameover)
-                      ↑___________|
+(first visit) onboarding (name) → home
+(return visit with profile) home
+(factory reset) onboarding
 ```
 
-- **3 hearts** per run (`MAX_HEARTS` in `types.ts`)
-- Lose heart if distance **> 1,500 km** or year error **> 80 years**
-- **Classic / Past / Future** modes — Past/Future add year slider + era chips
-- Scoring in `lib/geo.ts` (`scoreGuess`)
+Name login: `lib/login.ts` — creates or restores player via `loginNames` + `users`.
+
+### Solo
+
+```
+home → explore → guess → result → (next round | gameover)
+```
+
+### Daily
+
+```
+home → daily card → explore → guess → result → reward wheel → stash
+```
+
+### Co-op Decide (Firebase)
+
+```
+home → pick friend → coop setup → invite
+  → guest accept (home banner)
+  → host start (home banner)
+  → explore → guess (hidden pin) → coop-wait → coop-reveal → coop-vote → coop-result
+```
+
+Match chat available on all co-op screens (`lib/match-chat-ui.ts`).
 
 ---
 
-## Screens & features
+## Screens
 
-| Screen | File / renderer | Notes |
-|---|---|---|
-| Onboarding | `renderOnboarding()` | Name + avatar editor |
-| Home | `renderHome()` | Modes, tools, social button |
-| Explore | `renderExplore()` | Pannellum + session HUD + inventory |
-| Guess | `renderGuess()` | MapLibre pin + optional year |
-| Result | `renderResult()` | Grade, map line, context |
-| Game Over | `renderGameOver()` | Final score → scoreboard |
-| Library | `renderLibrary()` | Browse / hide panoramas |
-| Library View | `renderLibraryView()` | Full-screen preview |
-| Scoreboard | `renderScoreboard()` | Local high scores by mode |
-| Player Info | `renderPlayerInfo()` | Stats + edit profile |
+| Screen | Notes |
+|---|---|
+| Onboarding / Login | Name entry only (`renderOnboarding`) |
+| Home | Solo/Multi tabs, daily, social, co-op banners |
+| Explore / Guess | Solo or co-op (`isCoopRun`) |
+| Co-op Wait / Reveal / Vote / Result | Multiplayer phases |
+| Library / Library View / Library Map | Trash excluded from map pins |
+| Player Info | Stats, avatar edit, stash, **Factory Reset** |
 
-**Overlays (not separate screens):**
-- **Inventory** — explore/guess only (`lib/inventory-ui.ts`)
-- **Social / Friends** — home only (`lib/social-ui.ts`, mock data in `data/social.ts`)
-- **Attributes / Credits** — home only (`lib/credits-ui.ts`, data in `data/avatar-credits.ts`)
-- **Avatar editor** — accordion UI (`lib/avatar-editor-ui.ts`)
+**Overlays:** Social, Co-op setup, Credits, Classic region, Daily wheel, Inventory (solo), Match chat (co-op).
 
 ---
 
-## Source layout
+## Source layout (key files)
 
 ```
 web/src/
-├── main.ts              # ~1.6k lines — routing, render, events, map/pano lifecycle
-├── types.ts             # AppState, Round, GameSession, …
-├── styles.css           # Design tokens + all screen styles
-├── data/
-│   ├── panoramas.ts     # 29 scene catalog
-│   ├── rounds.ts        # Round picker + mode filtering
-│   ├── lpc-catalog.ts   # Avatar config + LPC file map
-│   ├── inventory.ts     # Items + slot grid
-│   ├── social.ts        # Mock friends, chat, requests
-│   ├── avatar-credits.ts # LPC attribution blocks (credits overlay)
-│   └── landmarks.ts     # Binocular hint places
-└── lib/
-    ├── geo.ts           # Haversine, scoring, hearts UI
-    ├── profile.ts       # Player profile (localStorage)
-    ├── stats.ts         # Aggregate stats by region
-    ├── scoreboard.ts    # High score list
-    ├── library.ts       # Hidden panorama IDs
-    ├── avatar-compose.ts / avatar-animate.ts / avatar-editor-ui.ts
-    ├── inventory-ui.ts / inventory-hints.ts
-    ├── social-ui.ts / credits-ui.ts
-
-web/public/
-├── ChronoPinLogo.png    # ChronoSwitch branding (home + favicon)
-├── panoramas/           # 29 JPG equirectangular (see LICENSE.md)
-└── avatar/lpc/          # LPC walk sprite sheets (see LICENSE.md)
+├── main.ts
+├── data/coop.ts, match-chat.ts, social.ts, user-directory.ts
+├── lib/
+│   ├── login.ts, app-reset.ts
+│   ├── firebase.ts, firebase-auth.ts, firebase-profile.ts
+│   ├── firebase-friends.ts, firebase-coop.ts, firebase-social.ts
+│   ├── firebase-match-chat.ts
+│   ├── coop-ui.ts, match-chat-ui.ts, social-ui.ts
+│   └── daily.ts, library.ts, profile.ts, …
+web/public/.htaccess          # SPA rewrite (Strato)
+web/scripts/import-external-panos.mjs
 ```
 
 ---
 
 ## localStorage keys
 
-| Key | Module | Content |
-|---|---|---|
-| `chronopin-profile` | `profile.ts` | `{ name, avatarConfig, createdAt }` |
-| `chronopin-scoreboard` | `scoreboard.ts` | Array of score entries |
-| `chronopin-player-stats` | `stats.ts` | Games/rounds/regions aggregate |
-| `chronopin-hidden-panos` | `library.ts` | Hidden panorama IDs |
-| `chronopin-social` | `social.ts` | Friend IDs, pending requests |
-| `chronopin-social-messages` | `social.ts` | Chat messages per friend |
-
-No schema versioning yet — breaking changes require manual clear or migration helpers.
-
----
-
-## Avatar system
-
-- Config: `AvatarConfig` in `lpc-catalog.ts` (`body`, `skin`, `hair`, `topColor` as hex, …)
-- Compositor draws LPC walk frames (south-facing row) onto canvas
-- **Color UI:** preset swatches + native custom picker (top/pants/shoes as hex; hair presets or custom hex tint)
-- **Idle** animation: menu / editor (`avatar-idle` class)
-- **Walk** animation: in-game avatar button (`avatar-walk` class)
-- Male + female body/head/torso/legs/feet sheets in `public/avatar/lpc/`
-- In-app LPC credits: home **Attributes / Credits** overlay + editor footer link
-
----
-
-## Inventory (in-game)
-
-| Item | ID | Status |
-|---|---|---|
-| Binoculars | `binoculars` | Usable — landmark hint |
-| North Star | `star` | Usable — country/region hint |
-| Compass | `compass` | Locked (Soon) |
-| Pocket map | `map` | Locked (Soon) |
-| Time shard | `hourglass` | Locked (Soon) |
-
-One use per item per round. Hints via `inventory-hints.ts` + `landmarks.ts`.
-
----
-
-## Social (mock)
-
-- Demo friend **Max Mustermann** — online/offline toggles every ~40s
-- Pending request **Lena Vogt** — accept/decline (accept bug: does not add to friend list yet)
-- Chat persisted in `chronopin-social-messages`
-- Firebase planned for real sync
-
----
-
-## Known bugs & tech debt
-
-| Priority | Issue |
+| Key | Content |
 |---|---|
-| High | MapLibre not destroyed on guess → explore (`back-explore`) |
-| High | Pannellum not destroyed on explore → guess |
-| Medium | `acceptFriendRequest` does not register new friends |
-| Medium | UI English + `de-DE` numbers + `lang="de"` mismatch |
-| Medium | `localStorage.setItem` without try/catch |
-| Low | MapLibre bundled on all screens (~890 KB JS) |
-| Low | Avatar RAF loops run while visible (no reduced-motion guard) |
-| Low | Native `alert()` / `confirm()` for destructive actions |
+| `chronopin-profile` | Player profile |
+| `chronopin-social` | Friend ids, request ids |
+| `chronopin-social-messages` | Friend chat (local) |
+| `chronopin-match-chat` | Match chat cache |
+| `chronopin-coop-rooms` / `coop-invites` / `coop-active` | Co-op state |
+| `chronopin-trashed-panos` / `seen-panos` | Library |
+| `chronopin-daily` / `chronopin-stash` | Daily rewards |
+| `chronopin-scoreboard` / `player-stats` | Solo meta |
 
-See also review notes in root [`README.md`](../README.md#bekannte-lücken--bugs-noch-offen).
-
----
-
-## Adding a panorama
-
-1. Add CC-licensed equirectangular JPG to `web/public/panoramas/`
-2. Entry in `web/src/data/panoramas.ts` (`id`, `lat`, `lng`, `modes`, attribution)
-3. Row in `web/public/panoramas/LICENSE.md`
-4. Optional: `isNew: true` for library badge
+Writes use `safeStorageSet()` — fails silently on quota/private mode.
 
 ---
 
-## Build
+## Co-op phases
+
+| Phase | Meaning |
+|---|---|
+| `invite_pending` | Waiting for guest accept |
+| `explore` | Pinning phase |
+| `host_pinned` | Async: guest's turn |
+| `reveal` | Both pins visible |
+| `vote` | Team picks final pin |
+| `result` | Score shown |
+| `done` | Room closed |
+
+**Quit behaviour:** `leaveCoopRunLocally()` on exit mid-game — does not set `done` for partner. `finishCoopRoom()` only after result screen.
+
+**Offline demo:** `simulatePartnerPin/Vote()` visible only when Firebase is not configured.
+
+---
+
+## Known limitations (v1)
+
+| Area | Status |
+|---|---|
+| 1v1 Duel / Battle Royale | UI only |
+| Friend DMs | localStorage only |
+| Scoreboard cloud sync | Not implemented |
+| Pano/map loading UI | None (blank until loaded) |
+| Bundle size | ~1.6 MB JS (MapLibre eager load) |
+
+---
+
+## Build & deploy
 
 ```bash
 cd web
-npm run build    # tsc + vite → web/dist/
-npm run preview  # serve production build
+npm run build          # default base /
+npm run build:strato   # base /app/Chrono/
 ```
 
-Do not commit `web/dist/` or `node_modules/` (see `web/.gitignore`).
+Upload `web/dist/` to static host. See [`STRATO_DEPLOY.md`](./STRATO_DEPLOY.md).
+
+Do not commit `web/dist/`, `node_modules/`, or `web/.env`.

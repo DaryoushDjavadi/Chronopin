@@ -15,55 +15,56 @@ Guess **where** you are. In time modes, also guess **when**.
 
 > Stand: Juli 2026 · Web-Prototyp unter [`web/`](./web/) — `cd web && npm run dev`
 
-### Kürzlich umgesetzt (letzte Sessions)
+### Kürzlich umgesetzt (Juli 2026 — Prototyp v1)
 
 **Spiel & Content**
-- Web-Prototyp (Vite + TS, mobile-first): Explore → Guess → Result → Game Over
-- **29 Panoramen** weltweit (Wikimedia CC), 18 mit **`new`-Badge** in der Bibliothek
-- 3 Herzen pro Run, Scoring (Distanz + Jahr), lokales Scoreboard & Stats
-- Panorama-Bibliothek: browse, 360°-Preview, lokal ausblenden/wiederherstellen
+- Web-Prototyp (Vite + TS, mobile-first): Login → Home → Explore → Guess → Result
+- **44 Panoramen** (Wikimedia + Panoramax), Anbieter-Tags, **`new`-Badge**
+- **Classic-Region**, **Daily ChronoPin** + Glücksrad, **Stash**, 3 Herzen pro Run
+- Panorama-Bibliothek: Preview, **Papierkorb**, **Weltkarte** (Trash ausgeschlossen)
+- Pixel-Avatar-Editor (LPC), ChronoPin-Logo, Credits-Overlay
 
-**Character & Avatar**
-- Pixel-Avatar-Editor (**Universal LPC**): Skin, Haare, Kopfbedeckung, Top, Hosen, Schuhe
-- **Male / Female** Körpertyp
-- **Preset-Farben + Custom Color Picker** (Haare, Top, Hosen, Schuhe) — erkennbarer Regenbogen-Picker neben Swatches
-- **Reset** + **🎲 Random** im Editor
-- **Idle-Animation** (Menü/Editor) · **Walk-Animation** (Avatar-Button im Spiel)
+**Login & Account**
+- **Login-Maske** beim Start — Name eingeben (neu = neuer Spieler, bekannt = Welcome back)
+- Firebase **`loginNames`** für eindeutige Namen · **Factory Reset** in Player Info (Test)
 
-**Branding & Rechte**
-- **ChronoSwitch**-Logo im Home (`logo/ChronoPinLogo.png`, kein separater „ChronoPin“-Schriftzug mehr)
-- Home → **Attributes / Credits** — LPC-Attribution (Body, Head, Face) im Overlay
+**Social & Friends (Firebase + Offline)**
+- Freunde **suchen, anfragen, annehmen** (Firestore + Demo-User offline)
+- Freundesliste, Chat (lokal), Online-Status
+- Multiplayer: **Gegner aus Freundesliste wählen**
 
-**Inventar**
-- 3×3-Inventar (Pixel-Stil): Fernglas, North Star + Platzhalter (Compass, Map, Time Shard)
-- 1× Nutzung pro Item pro Runde · Hinweis-Banner im Spiel
-- Schließen (×), Hover-Tooltips, Styling wie Hauptmenü
+**Multiplayer — Co-op Decide (2 Spieler, Firebase)**
+- **Live** + **Async** · Classic / Past / Future
+- Ablauf: Invite → Accept → blind pin → Reveal → Team-Vote → Ergebnis
+- **Firestore-Sync** (`coopRooms`, `coopInvites`) · Host-Banner **Start game** auf Home
+- **Match-Chat** während der Runde (Pop-up-Toasts + Chat-Panel, Firestore messages)
+- Verlassen beendet Match nicht für Partner
 
-**Social (Demo / Mock)**
-- **👥 Friends-Button** neben Name & Avatar im Home
-- Freundesliste · Freunde hinzufügen · Anfragen annehmen/ablehnen
-- Test-Freund **Max Mustermann** (wechselt Online/Offline), Stats, Chat
-- Offene Demo-Anfrage von **Lena Vogt**
+**Deploy**
+- **Strato**-Build (`npm run build:strato`, Base `/app/Chrono/`) — [`docs/STRATO_DEPLOY.md`](./docs/STRATO_DEPLOY.md)
+- Firebase Hosting + Firestore Rules/Indexes im Repo
 
-**Sonstiges**
-- Landmarks für Fernglas-Hinweise (global erweitert)
-- Player Info: Stats, Avatar bearbeiten, Mitglied-seit-Datum
+### Bekannte Lücken (nach v1)
 
-### Bekannte Lücken / Bugs (noch offen)
+- 1v1 Duel & Battle Royale — UI only („Coming soon“)
+- Social-DMs nur lokal (kein Firestore-Chat zwischen Freunden)
+- Scoreboard nur lokal · Keine Loading-Spinner für Pano/Map
+- MapLibre-Bundle groß (~1,6 MB JS) — lazy load später
 
-- Map/Pano-Lifecycle bei Screen-Wechsel (Explore ↔ Guess) — Memory-Leak-Risiko
-- Freund annehmen (Lena) fügt sie noch nicht zur Liste hinzu
-- UI Englisch, Zahlen `de-DE`, `lang="de"` — inkonsistent
-- `alert()` / `confirm()` statt In-App-Feedback
-- Keine Loading-States für Panorama/Karte
-- Multiplayer nur UI-Preview · Firebase/Sync noch nicht angebunden
+### Kürzlich behoben (Polish-Pass)
+
+- Login-Name-Hijack verhindert · `loginNames` beim Profil-Sync
+- Freundesliste + Friend-Add über Firebase-Suche
+- Co-op Quit killt Partner-Match nicht mehr · Host Start-Banner
+- Demo-/Prototype-Texte aus UI entfernt · Daily nutzt 3 Herzen
+- Firestore composite indexes (`firestore.indexes.json`)
 
 ---
 
 ### Ideen für die Zukunft
 
 **Gameplay & Modi**
-- **Daily ChronoPin** — eine Runde pro Tag für alle (Wordle-Style)
+- ~~**Daily ChronoPin**~~ ✅ im Web-Prototyp (UTC-Reset, Glücksrad, Stash)
 - **Themen-Packs** — z.B. nur Asien, Brücken, Nacht-Szenen, Before 1950
 - **Lightning Round** — kurze Panorama-Zeit, höhere Punkte
 - **Streak / Hardcore** — Endless oder 1 Herz, doppelte Punkte
@@ -76,9 +77,11 @@ Guess **where** you are. In time modes, also guess **when**.
 - Time Shard → Jahr enger eingrenzen (Past/Future)
 
 **Social & Multiplayer**
+- ~~**Co-op Decide** (Live + Async)~~ ✅ **Firebase 2-Player** im Web-Prototyp
+- ~~**Match-Chat**~~ ✅ während Co-op (Firestore)
 - **Async Duell** — gleiche Szene, wer näher war gewinnt (ohne Live-Sync)
 - **Party Code** — 4–8 Spieler, gleicher Seed, zeitlich begrenzt
-- Co-op Decide & 1v1 Duel (wie im Plan unten) mit Firebase/Supabase
+- 1v1 Duel mit Firebase/Supabase (UI vorbereitet, noch „Soon“)
 - Freunde auf der Weltkarte (letzte Region / Online-Status)
 
 **Meta & Motivation**
@@ -88,9 +91,9 @@ Guess **where** you are. In time modes, also guess **when**.
 - Avatar sichtbarer im Spiel (Pin-Drop, Celebration, Game Over)
 
 **QoL & Polish**
-- Einheitliche **Sprache** (DE oder EN + i18n)
-- **In-App Toasts/Confirms** statt Browser-Dialoge
-- **Loading / Error** für Panorama & MapLibre
+- Einheitliche **Sprache** EN (i18n DE später)
+- **In-App Dialoge** für Confirm/Alert
+- **Loading / Error** für Panorama & MapLibre (offen)
 - Spielregeln kurz im UI („>1.500 km oder >80 Jahre = Herz verloren“)
 - Modal-A11y: Escape, Focus-Trap, `prefers-reduced-motion`
 - MapLibre **lazy load** · kleinerer Bundle
@@ -104,8 +107,9 @@ Guess **where** you are. In time modes, also guess **when**.
 - Tests für Scoring, Avatar-Config, Round-Picker
 
 **Dokumentation**
-- [`web/README.md`](./web/README.md) — Prototyp starten & Stack
-- [`docs/WEB_PROTOTYPE.md`](./docs/WEB_PROTOTYPE.md) — Architektur, localStorage, bekannte Bugs
+- [`web/README.md`](./web/README.md) — Prototyp starten, Firebase, Deploy
+- [`docs/WEB_PROTOTYPE.md`](./docs/WEB_PROTOTYPE.md) — Architektur, localStorage, Firestore
+- [`docs/STRATO_DEPLOY.md`](./docs/STRATO_DEPLOY.md) — Strato Webspace Upload
 - [`docs/TECH_AND_RIGHTS.md`](./docs/TECH_AND_RIGHTS.md) — Lizenzen & kommerzielle Rechte
 
 ---
@@ -135,9 +139,9 @@ If you land in a **new chat** on this repo, treat the following as source of tru
 
 ### V1 scope (keep small)
 1. Solo Classic + tiny Past pack — **web prototype validates loop** ([`web/`](./web/))  
-2. Then Co-op Decide (2 players, room code)  
+2. ~~Co-op Decide (2 players)~~ — **playable** in web prototype with Firebase  
 3. Then 1v1  
-4. Future pack · Daily  
+4. Future pack · ~~Daily~~ ✅ (Web-Prototyp)  
 5. Store ~€1.99  
 6. BR much later  
 
@@ -195,9 +199,11 @@ You can mix eras later (e.g. "Any era" playlist).
 
 ---
 
-## Multiplayer (planned)
+## Multiplayer
 
 Social play is a core part of ChronoPin — not an afterthought. All multiplayer modes work with Classic, Past, and Future scenes.
+
+> **Web prototype (July 2026):** **Co-op Decide** playable with **Firebase** (2 devices). Login by name, friends, live/async co-op, in-match chat. 1v1 Duel & Battle Royale remain UI previews.
 
 ### Co-op — Decide (highlight feature)
 You and a friend see the **same** scene and solve it as a team.

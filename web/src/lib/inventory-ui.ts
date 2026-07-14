@@ -1,5 +1,11 @@
 import { INVENTORY_ITEMS, INVENTORY_SLOT_COUNT, renderInventorySlotIcon } from '../data/inventory';
 import { inventoryIconHtml } from '../data/inventory-icons';
+import {
+  canUseInventoryItem,
+  countItemUsesThisRound,
+  getStashItemCharges,
+  maxItemUsesPerRound,
+} from './stash';
 
 function escapeHtml(text: string): string {
   return text
@@ -24,10 +30,13 @@ export function renderInventoryOverlayHtml(
         return `<li class="inv-slot inv-slot-empty" aria-hidden="true"></li>`;
       }
 
-      const spent = usedItemIds.includes(item.id);
-      const locked = !item.usable;
-      const disabled = locked || spent;
-      const statusTag = locked ? 'Soon' : spent ? 'Used' : '';
+      const uses = countItemUsesThisRound(usedItemIds, item.id);
+      const maxUses = maxItemUsesPerRound(item.id);
+      const stash = getStashItemCharges(item.id);
+      const locked = !item.usable && stash === 0;
+      const spent = uses >= maxUses;
+      const disabled = !canUseInventoryItem(item.id, item.usable, usedItemIds);
+      const statusTag = locked ? 'Soon' : spent ? 'Used' : stash > 0 ? `+${stash}` : '';
 
       return `
         <li>
@@ -42,7 +51,8 @@ export function renderInventoryOverlayHtml(
             aria-describedby="inv-tip-${item.id}"
           >
             ${renderInventorySlotIcon(item)}
-            ${statusTag ? `<span class="inv-slot-tag">${statusTag}</span>` : ''}
+            ${stash > 0 ? `<span class="inv-stash-badge">+${stash}</span>` : ''}
+            ${statusTag && !stash ? `<span class="inv-slot-tag">${statusTag}</span>` : statusTag ? `<span class="inv-slot-tag">${statusTag}</span>` : ''}
             ${locked ? `<span class="inv-slot-lock">${inventoryIconHtml('lock')}</span>` : ''}
             <span class="inv-tooltip" id="inv-tip-${item.id}" role="tooltip">
               <strong>${escapeHtml(item.name)}</strong>

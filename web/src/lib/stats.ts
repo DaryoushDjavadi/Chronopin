@@ -1,3 +1,4 @@
+import { safeStorageSet } from './storage';
 import { continentFromLatLng, CONTINENT_LABELS, type ContinentId } from './regions';
 
 export interface RegionStat {
@@ -44,7 +45,7 @@ export function getStats(): PlayerStats {
 }
 
 function saveStats(stats: PlayerStats): void {
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+  safeStorageSet(STATS_KEY, JSON.stringify(stats));
 }
 
 let currentRunStreak = 0;
@@ -132,7 +133,7 @@ export function getRegionBreakdown(): Array<{ label: string; pct: number; total:
 }
 
 export function formatMemberSince(iso: string): string {
-  return new Date(iso).toLocaleDateString('de-DE', {
+  return new Date(iso).toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',

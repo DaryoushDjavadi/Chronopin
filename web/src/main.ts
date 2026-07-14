@@ -22,12 +22,64 @@ import { getInventoryItem } from './data/inventory';
 import { bindInventoryDetailPreview, renderInventoryOverlayHtml } from './lib/inventory-ui';
 import {
   acceptFriendRequest,
+  cancelOutgoingRequest,
   declineFriendRequest,
+  getFriendById,
+  getFriends,
   getPendingRequestCount,
+  isFriendOnline,
   sendFriendRequestByName,
+  sendFriendRequestToUser,
   sendMessageToFriend,
 } from './data/social';
+import { getDirectoryUser } from './data/user-directory';
+import {
+  acceptCoopInvite,
+  applyRemoteCoopRoom,
+  applyRemoteCoopInvite,
+  advanceCoopToVote,
+  canISubmitPin,
+  cancelCoopInvite,
+  createCoopInvite,
+  declineCoopInvite,
+  finishCoopRoom,
+  getCoopRoom,
+  getCoopRound,
+  getHostReadyCoopRooms,
+  getMyCoopRole,
+  leaveCoopRunLocally,
+  simulatePartnerPin,
+  simulatePartnerVote,
+  startCoopRoom,
+  setActiveCoopRoomId,
+  submitCoopPin,
+  submitCoopVote,
+  type CoopPin,
+  type CoopVoteChoice,
+} from './data/coop';
+import {
+  renderCoopHud,
+  renderCoopResult,
+  renderCoopReveal,
+  renderCoopSetupOverlay,
+  renderCoopVote,
+  renderCoopWaitScreen,
+  renderMultiplayerFriendPicker,
+} from './lib/coop-ui';
 import { renderCreditsOverlayHtml } from './lib/credits-ui';
+import { renderClassicRegionOverlayHtml } from './lib/classic-region-ui';
+import { renderDailyHomeCard, renderDailyWheelOverlay } from './lib/daily-ui';
+import {
+  canPlayDaily,
+  formatDailyCountdown,
+  getNextDailyResetMs,
+  markDailyCompleted,
+  markDailyWheelSpun,
+  pickDailyRound,
+  resetDailyForTesting,
+} from './lib/daily';
+import { applyWheelReward, pickWeightedSegment, WHEEL_SEGMENTS } from './lib/daily-wheel';
+import { alertDialog, confirmDialog } from './lib/dialog-ui';
 import { renderSocialOverlayHtml } from './lib/social-ui';
 import { getBinocularHint, getStarHint } from './lib/inventory-hints';
 import {
@@ -38,17 +90,57 @@ import {
 } from './lib/geo';
 import {
   getVisiblePanoramas,
-  hidePanorama,
-  restoreAllPanoramas,
+  trashPanorama,
+  restoreFromTrash,
+  restoreAllFromTrash,
+  getTrashedPanoramas,
+  getLibraryMapPanoramas,
+  markPanoramaSeen,
   panoramaUrl,
+  renderPanoramaBadges,
 } from './lib/library';
+import {
+  classicRegionLabel,
+  getClassicRegionPanoramaCount,
+} from './lib/classic-regions';
 import {
   hasProfile,
   getProfile,
-  saveProfile,
   updateProfile,
+  persistProfile,
   getDefaultAvatarConfig,
+  getPlayerId,
 } from './lib/profile';
+import { isFirebaseConfigured } from './lib/firebase';
+import { ensureFirebaseAuth, waitForFirebaseUid } from './lib/firebase-auth';
+import {
+  pushProfileToFirestore,
+  syncLocalProfileWithFirebase,
+} from './lib/firebase-profile';
+import { subscribeCoopRoom, pullCoopRoomFromFirestore, pullCoopInviteFromFirestore } from './lib/firebase-coop';
+import { assetUrl } from './lib/asset-url';
+import {
+  syncSocialFromCloud,
+  startCloudCoopInviteListener,
+  stopCloudCoopInviteListener,
+} from './lib/firebase-social';
+import { loginWithName } from './lib/login';
+import { factoryResetApp } from './lib/app-reset';
+import { getMatchMessages, sendMatchChatMessage } from './data/match-chat';
+import type { MatchChatMessage } from './data/match-chat';
+import { subscribeCoopMatchChat, pullCoopMatchChat } from './lib/firebase-match-chat';
+import {
+  renderMatchChatOverlay,
+  renderMatchChatToast,
+  getCoopPartnerId,
+} from './lib/match-chat-ui';
+import {
+  acceptFirestoreFriendRequest,
+  declineFirestoreFriendRequest,
+  sendFirestoreFriendRequest,
+  searchFirestoreUsersByName,
+} from './lib/firebase-friends';
+import { getCloudIncomingCoopInvites } from './data/social';
 import {
   addScoreboardEntry,
   getScoreboard,
@@ -66,7 +158,24 @@ import {
   formatMemberSince,
   winRate,
 } from './lib/stats';
-import { MAX_HEARTS, DISTANCE_FAIL_KM, type AppState, type GameMode, type Round, type Screen } from './types';
+import {
+  canUseInventoryItem,
+  consumeStashItemCharge,
+  countItemUsesThisRound,
+  getStash,
+  getStashItemCharges,
+  takeBonusHeartsForRun,
+  takeBonusPointsForRun,
+} from './lib/stash';
+import {
+  MAX_HEARTS,
+  DISTANCE_FAIL_KM,
+  type AppState,
+  type ClassicRegionFilter,
+  type GameMode,
+  type Round,
+  type Screen,
+} from './types';
 
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
@@ -88,8 +197,25 @@ let state: AppState = {
   socialView: 'list',
   socialSelectedFriendId: null,
   socialMessageDraft: '',
+  socialAddNameDraft: '',
   socialToast: null,
   creditsOpen: false,
+  classicSetupOpen: false,
+  classicRegion: 'world',
+  isDailyRun: false,
+  dailyWheelOpen: false,
+  dailyWheelResult: null,
+  isCoopRun: false,
+  coopRoomId: null,
+  coopMyRole: null,
+  coopSetupOpen: false,
+  coopSetupFriendId: null,
+  coopSyncMode: 'live',
+  coopGameMode: 'classic',
+  socialCloudSearch: [],
+  matchChatOpen: false,
+  matchChatDraft: '',
+  matchChatUnread: 0,
 };
 
 let scoreSavedForSession = false;
@@ -101,18 +227,39 @@ let map: maplibregl.Map | null = null;
 let guessMarker: maplibregl.Marker | null = null;
 let answerMarker: maplibregl.Marker | null = null;
 let socialOnlineTimer: ReturnType<typeof setInterval> | null = null;
+let dailyCountdownTimer: ReturnType<typeof setInterval> | null = null;
+let libraryMarkers: maplibregl.Marker[] = [];
+let libraryMapInitToken = 0;
+let coopRoomUnsub: (() => void) | null = null;
+let matchChatUnsub: (() => void) | null = null;
 
 const app = document.getElementById('app')!;
 
 function render(): void {
+  destroyPanorama();
+  destroyMap();
   app.innerHTML = getScreenHtml(state.screen);
   bindScreenEvents(state.screen);
   void hydrateAvatarCanvases(app);
   if (state.screen === 'explore' || state.screen === 'guess') bindInventoryEvents();
-  if (state.screen === 'home') syncSocialOnlineTimer();
+  if (state.screen === 'coop-reveal') initCoopRevealMap();
+  if (state.screen === 'coop-vote') initCoopVoteMap();
+  if (state.screen === 'coop-result') initCoopResultMap();
+  if (state.screen === 'home') {
+    syncSocialOnlineTimer();
+    syncDailyCountdownTimer();
+  } else {
+    clearSocialOnlineTimer();
+    clearDailyCountdownTimer();
+  }
   if (state.screen === 'explore' || state.screen === 'library-view') initPanorama();
   if (state.screen === 'guess') initGuessMap();
   if (state.screen === 'result') initResultMap();
+  if (state.screen === 'library-map') initLibraryMap();
+  if (isMatchChatScreen()) {
+    const log = app.querySelector('[data-match-chat-log]');
+    if (log) log.scrollTop = log.scrollHeight;
+  }
 }
 
 function getScreenHtml(screen: Screen): string {
@@ -133,10 +280,20 @@ function getScreenHtml(screen: Screen): string {
       return renderLibrary();
     case 'library-view':
       return renderLibraryView();
+    case 'library-map':
+      return renderLibraryMap();
     case 'scoreboard':
       return renderScoreboard();
     case 'player-info':
       return renderPlayerInfo();
+    case 'coop-wait':
+      return renderCoopWait();
+    case 'coop-reveal':
+      return renderCoopRevealScreen();
+    case 'coop-vote':
+      return renderCoopVoteScreen();
+    case 'coop-result':
+      return renderCoopResultScreen();
   }
 }
 
@@ -146,9 +303,46 @@ function renderHome(): string {
   const panoCount = getVisiblePanoramas().length;
   const profile = getProfile()!;
   const pendingSocial = getPendingRequestCount();
+  const soloActive = state.playType === 'solo';
+  const incomingCoop = getCloudIncomingCoopInvites();
+  const hostReadyCoop = getHostReadyCoopRooms(getPlayerId());
+  const mpFriends = getFriends();
+  const mpFriendReady =
+    mpFriends.length > 0 &&
+    state.coopSetupFriendId !== null &&
+    mpFriends.some((f) => f.id === state.coopSetupFriendId);
 
   return `
     <div class="screen screen-home">
+      ${
+        incomingCoop.length > 0 || hostReadyCoop.length > 0
+          ? `<div class="home-coop-banner">
+              ${incomingCoop
+                .map(
+                  (inv) => `
+                <div class="home-coop-invite">
+                  <span><strong>${escapeHtml(inv.fromName)}</strong> invited you to Co-op · ${escapeHtml(inv.syncMode === 'live' ? 'Live' : 'Async')}</span>
+                  <div class="home-coop-invite-actions">
+                    <button type="button" class="btn btn-primary btn-sm" data-action="accept-coop-home" data-invite="${inv.id}">Accept &amp; play</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="decline-coop-home" data-invite="${inv.id}">Decline</button>
+                  </div>
+                </div>`,
+                )
+                .join('')}
+              ${hostReadyCoop
+                .map(
+                  (room) => `
+                <div class="home-coop-invite home-coop-ready">
+                  <span><strong>${escapeHtml(room.guestName)}</strong> accepted your Co-op invite · ${escapeHtml(room.roundTitle)}</span>
+                  <div class="home-coop-invite-actions">
+                    <button type="button" class="btn btn-primary btn-sm" data-action="start-coop-room" data-room="${room.id}">Start game</button>
+                  </div>
+                </div>`,
+                )
+                .join('')}
+            </div>`
+          : ''
+      }
       <header class="hero">
         <div class="hero-profile-row">
           <button class="player-chip" data-action="player-info" aria-label="Player info">
@@ -162,30 +356,32 @@ function renderHome(): string {
         </div>
         <img
           class="app-logo"
-          src="/ChronoPinLogo.png"
-          alt="ChronoSwitch"
+          src="${assetUrl('/ChronoPinLogo.png')}"
+          alt="ChronoPin"
           width="220"
           height="220"
           decoding="async"
         />
         <p class="tagline">Guess <strong>where</strong>. In time modes, also guess <strong>when</strong>.</p>
-        <span class="badge">Web prototype · ${panoCount} panoramas</span>
+        <span class="badge">${panoCount} panoramas · Solo &amp; Co-op</span>
       </header>
 
       <section class="panel">
         <div class="segmented" role="tablist">
-          <button class="segmented-btn active" data-play="solo" role="tab" aria-selected="true">Solo</button>
-          <button class="segmented-btn" data-play="multiplayer" role="tab" aria-selected="false">Multiplayer</button>
+          <button class="segmented-btn ${soloActive ? 'active' : ''}" data-play="solo" role="tab" aria-selected="${soloActive}">Solo</button>
+          <button class="segmented-btn ${soloActive ? '' : 'active'}" data-play="multiplayer" role="tab" aria-selected="${!soloActive}">Multiplayer</button>
         </div>
 
-        <div class="solo-panel">
+        <div class="solo-panel${soloActive ? '' : ' hidden'}">
+          ${renderDailyHomeCard()}
+
           <h2>Choose mode</h2>
           <p class="hint">3 hearts per run · bad guesses cost a heart</p>
           <div class="mode-grid">
             ${modes
               .map(
                 (m) => `
-              <button class="mode-card" data-mode="${m}">
+              <button class="mode-card" data-mode="${m}" data-action="${m === 'classic' ? 'select-classic' : 'start-mode'}">
                 <span class="mode-icon">${modeIcons[m]}</span>
                 <span class="mode-name">${modeLabel(m)}</span>
                 <span class="mode-desc">${modeDescription(m)}</span>
@@ -201,7 +397,7 @@ function renderHome(): string {
               <span class="tool-icon">🏆</span>
               <span class="tool-info">
                 <strong>Scoreboard</strong>
-                <span>Local high scores · Firebase later</span>
+                <span>Your personal best runs</span>
               </span>
               <span class="tool-count">${getScoreboard().length}</span>
             </button>
@@ -209,30 +405,227 @@ function renderHome(): string {
               <span class="tool-icon">🗂️</span>
               <span class="tool-info">
                 <strong>Panorama Library</strong>
-                <span>Browse, preview &amp; remove test scenes</span>
+                <span>Browse, preview &amp; manage scenes</span>
               </span>
               <span class="tool-count">${panoCount}</span>
             </button>
           </div>
         </div>
 
-        <div class="multi-panel hidden">
+        <div class="multi-panel${soloActive ? ' hidden' : ''}">
           <h2>Play together</h2>
-          <p class="hint">Multiplayer UI preview — not wired up yet.</p>
-          <div class="mp-grid">
-            ${renderMpCard('Co-op Decide', 'Blind pin → reveal → argue → one final pin', '2 players', true)}
-            ${renderMpCard('1v1 Duel', 'Same scene, closest guess wins the round', 'Best of 5', true)}
-            ${renderMpCard('Battle Royale', '4–8 players, elimination rounds', 'Later', false)}
+          <p class="hint">Pick a friend, then choose a multiplayer mode.</p>
+          ${renderMultiplayerFriendPicker(mpFriends, state.coopSetupFriendId)}
+          <div class="mp-grid" data-mp-grid>
+            ${renderMpCard('Co-op Decide', 'Blind pin → reveal → vote on one final pin', '2 players · Live or async', true, 'coop-decide', mpFriendReady)}
+            ${renderMpCard('1v1 Duel', 'Same scene, closest guess wins the round', 'Best of 5 · Coming soon', false)}
+            ${renderMpCard('Battle Royale', '4–8 players, elimination rounds', 'Coming soon', false)}
           </div>
         </div>
       </section>
 
       <footer class="home-footer">
-        <p class="footer-note">Map: MapLibre + OpenFreeMap · Panoramas: Wikimedia Commons</p>
+        <p class="footer-note">Map: MapLibre + OpenFreeMap · Panoramas: Wikimedia, Panoramax &amp; more</p>
         <button type="button" class="credits-chip" data-action="credits">Attributes / Credits</button>
       </footer>
       ${renderSocialOverlay()}
+      ${renderCoopSetup()}
       ${renderCreditsOverlay()}
+      ${renderClassicRegionOverlay()}
+      ${renderDailyWheelOverlay(state.dailyWheelOpen, state.dailyWheelResult)}
+    </div>
+  `;
+}
+
+function renderStashPanel(): string {
+  const stash = getStash();
+  const items = [
+    ['binoculars', '🔭 Binoculars'],
+    ['star', '⭐ North Star'],
+    ['compass', '🧭 Compass'],
+    ['map', '🗺 Pocket map'],
+  ] as const;
+  const rows = items
+    .map(([id, label]) => {
+      const n = stash.itemCharges[id] ?? 0;
+      return `<div class="stash-row"><span>${label}</span><strong>${n}×</strong></div>`;
+    })
+    .join('');
+  return `
+    <div class="stash-grid">
+      ${rows}
+      <div class="stash-row"><span>♥ Next run bonus</span><strong>+${stash.bonusHeartsNextRun}</strong></div>
+      <div class="stash-row"><span>✨ Points bank</span><strong>${stash.bonusPointsBank.toLocaleString('en-GB')}</strong></div>
+    </div>
+    <p class="hint">Daily wheel prizes land here. Extra uses stack on inventory items.</p>`;
+}
+
+function syncDailyCountdownTimer(): void {
+  clearDailyCountdownTimer();
+  dailyCountdownTimer = setInterval(() => {
+    const el = app.querySelector('[data-daily-countdown]');
+    if (el) el.textContent = formatDailyCountdown(getNextDailyResetMs());
+  }, 30_000);
+}
+
+function clearDailyCountdownTimer(): void {
+  if (dailyCountdownTimer) {
+    clearInterval(dailyCountdownTimer);
+    dailyCountdownTimer = null;
+  }
+}
+
+function openDailyWheel(): void {
+  state.dailyWheelOpen = true;
+  state.dailyWheelResult = null;
+  if (state.screen === 'home') render();
+  else patchDailyWheelOverlay();
+}
+
+function patchDailyWheelOverlay(): void {
+  const html = renderDailyWheelOverlay(state.dailyWheelOpen, state.dailyWheelResult);
+  const existing = app.querySelector('[data-daily-wheel-overlay]');
+  if (existing) existing.outerHTML = html;
+  else app.insertAdjacentHTML('beforeend', html);
+}
+
+function closeDailyWheel(): void {
+  state.dailyWheelOpen = false;
+  state.dailyWheelResult = null;
+  state.isDailyRun = false;
+  if (state.screen === 'home') render();
+  else {
+    app.querySelector('[data-daily-wheel-overlay]')?.remove();
+    goHome();
+  }
+}
+
+let dailyWheelBound = false;
+let wheelSpinning = false;
+
+function bindDailyEventsOnce(): void {
+  if (dailyWheelBound) return;
+  dailyWheelBound = true;
+
+  app.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+
+    if (target.closest('[data-action="start-daily"]')) {
+      e.preventDefault();
+      startDailyGame();
+      return;
+    }
+
+    if (target.closest('[data-action="open-daily-wheel"]')) {
+      e.preventDefault();
+      openDailyWheel();
+      return;
+    }
+
+    if (target.closest('[data-action="open-daily-wheel-result"]')) {
+      e.preventDefault();
+      openDailyWheel();
+      return;
+    }
+
+    if (target.closest('[data-action="spin-daily-wheel"]')) {
+      e.preventDefault();
+      if (wheelSpinning) return;
+      wheelSpinning = true;
+      const btn = app.querySelector('[data-action="spin-daily-wheel"]') as HTMLButtonElement | null;
+      if (btn) btn.disabled = true;
+      const { segment, index } = pickWeightedSegment();
+      const spinner = app.querySelector('[data-wheel-spinner]') as HTMLElement | null;
+      if (!spinner) {
+        wheelSpinning = false;
+        return;
+      }
+      const segAngle = 360 / WHEEL_SEGMENTS.length;
+      const offset = index * segAngle + segAngle / 2;
+      const deg = 5 * 360 + (360 - offset);
+      spinner.style.transition = 'transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)';
+      spinner.style.transform = `rotate(${deg}deg)`;
+      window.setTimeout(() => {
+        const msg = applyWheelReward(segment.id);
+        markDailyWheelSpun();
+        state.dailyWheelResult = `${segment.emoji} ${segment.label} — ${msg}`;
+        wheelSpinning = false;
+        patchDailyWheelOverlay();
+      }, 4200);
+      return;
+    }
+
+    if (target.closest('[data-action="close-daily-wheel"]')) {
+      e.preventDefault();
+      closeDailyWheel();
+      return;
+    }
+
+    if (target.closest('[data-action="reset-daily-test"]')) {
+      e.preventDefault();
+      resetDailyForTesting();
+      state.dailyWheelOpen = false;
+      state.dailyWheelResult = null;
+      render();
+    }
+  });
+}
+
+function startDailyGame(): void {
+  if (!canPlayDaily()) return;
+  if (!hasProfile()) {
+    state.screen = 'onboarding';
+    render();
+    return;
+  }
+  const round = pickDailyRound();
+  if (!round) {
+    void alertDialog('No panoramas available for today’s daily.', 'Daily unavailable');
+    return;
+  }
+  destroyPanorama();
+  destroyMap();
+  scoreSavedForSession = false;
+  gameStatsRecorded = false;
+  resetRunStreak();
+  state.mode = 'classic';
+  state.isDailyRun = true;
+  state.dailyWheelOpen = false;
+  state.dailyWheelResult = null;
+  state.inventoryOpen = false;
+  state.session = {
+    hearts: MAX_HEARTS,
+    score: 0,
+    roundNumber: 1,
+    usedRoundIds: [round.id],
+    lastLostHeart: false,
+    lastRoundPoints: 0,
+    usedItemsThisRound: [],
+    activeHint: null,
+    isDaily: true,
+  };
+  state.round = round;
+  state.guess = null;
+  markPanoramaSeen(round.panoramaId);
+  state.screen = 'explore';
+  render();
+}
+
+function renderLibraryMap(): string {
+  const items = getLibraryMapPanoramas();
+  const trashed = getTrashedPanoramas().length;
+  return `
+    <div class="screen screen-library-map">
+      <div class="library-header">
+        <button class="icon-btn" data-action="library" aria-label="Back to library">←</button>
+        <div>
+          <h2>World map</h2>
+          <p>${items.length} active pins${trashed > 0 ? ` · ${trashed} in trash hidden` : ''}</p>
+        </div>
+      </div>
+      <div id="library-map" class="map-container map-library-world" aria-label="Panorama world map"></div>
+      <p class="library-map-legend">Only active library scenes — trashed panoramas are not shown.</p>
     </div>
   `;
 }
@@ -256,14 +649,36 @@ function renderAvatarEditor(defaultName: string, submitLabel: string): string {
 
 function renderOnboarding(): string {
   return `
-    <div class="screen screen-onboarding">
-      <div class="onboarding-card">
-        <div class="onboarding-header">
-          ${renderAvatar(state.avatarConfig, 'avatar avatar-xl avatar-idle')}
-          <h1>Welcome to ChronoPin</h1>
-          <p>Pick your name and build your pixel avatar.</p>
+    <div class="screen screen-onboarding screen-login">
+      <div class="onboarding-card login-card">
+        <img
+          class="login-logo"
+          src="${assetUrl('/ChronoPinLogo.png')}"
+          alt="ChronoPin"
+          width="120"
+          height="120"
+          decoding="async"
+        />
+        <div class="onboarding-header login-header">
+          <h1>ChronoPin</h1>
+          <p>Enter your name to start playing.</p>
         </div>
-        ${renderAvatarEditor('', 'Start playing')}
+        <form class="login-form" data-action="login-form">
+          <label class="field-label" for="login-name">Your name</label>
+          <input
+            id="login-name"
+            class="login-input"
+            name="name"
+            type="text"
+            maxlength="20"
+            autocomplete="nickname"
+            placeholder="e.g. Alex"
+            required
+          />
+          <p class="login-error" data-login-error role="alert"></p>
+          <button type="submit" class="btn btn-primary btn-lg login-submit">Continue</button>
+        </form>
+        <p class="login-hint">New name → new player · existing name → welcome back</p>
       </div>
     </div>
   `;
@@ -281,7 +696,7 @@ function renderPlayerInfo(): string {
       <div class="player-info-header">
         <button class="icon-btn" data-action="home" aria-label="Back">←</button>
         <h2>Player info</h2>
-        <span class="sync-badge">Local · Firebase later</span>
+        <span class="sync-badge">${isFirebaseConfigured() ? 'Cloud sync on' : 'Offline mode'}</span>
       </div>
 
       <div class="player-info-hero">
@@ -307,7 +722,7 @@ function renderPlayerInfo(): string {
           </div>
           <div class="stat-card">
             <span class="stat-label">Best run</span>
-            <strong>${stats.bestRunScore.toLocaleString('de-DE')}</strong>
+            <strong>${stats.bestRunScore.toLocaleString('en-GB')}</strong>
           </div>
           <div class="stat-card">
             <span class="stat-label">Rounds ♥ kept</span>
@@ -323,7 +738,7 @@ function renderPlayerInfo(): string {
           </div>
           <div class="stat-card stat-wide">
             <span class="stat-label">Total points earned</span>
-            <strong>${stats.totalScore.toLocaleString('de-DE')}</strong>
+            <strong>${stats.totalScore.toLocaleString('en-GB')}</strong>
           </div>
         </div>
       </section>
@@ -355,9 +770,23 @@ function renderPlayerInfo(): string {
         }
       </section>
 
+      <section class="stats-panel">
+        <h3>Reward stash</h3>
+        ${renderStashPanel()}
+        <button type="button" class="btn btn-secondary btn-sm dev-reset-daily" data-action="reset-daily-test">
+          Reset daily (test)
+        </button>
+      </section>
+
       <section class="stats-panel edit-panel">
         <h3>Edit profile</h3>
         ${renderAvatarEditor(profile.name, 'Save changes')}
+      </section>
+
+      <section class="stats-panel danger-panel">
+        <h3>Testing</h3>
+        <p class="hint">Wipe all local data and return to the login screen — like opening the app for the first time.</p>
+        <button type="button" class="btn btn-danger" data-action="factory-reset">Factory Reset</button>
       </section>
     </div>
   `;
@@ -380,7 +809,7 @@ function renderScoreboard(): string {
         <button class="icon-btn" data-action="home" aria-label="Home">←</button>
         <div>
           <h2>Scoreboard</h2>
-          <p>Local only · sync coming with Firebase</p>
+          <p>Scores saved on this device</p>
         </div>
       </div>
 
@@ -398,7 +827,7 @@ function renderScoreboard(): string {
           ? `<div class="personal-best">
               ${renderAvatar(profile.avatarConfig, 'avatar')}
               <span>Your best${filter !== 'all' ? ` (${modeLabel(filter as GameMode)})` : ''}:
-                <strong>${getPersonalBest(filter === 'all' ? undefined : filter).toLocaleString('de-DE')}</strong> pts
+                <strong>${getPersonalBest(filter === 'all' ? undefined : filter).toLocaleString('en-GB')}</strong> pts
               </span>
             </div>`
           : ''
@@ -419,7 +848,7 @@ function renderScoreboard(): string {
                     <strong>${escapeHtml(e.playerName)}${isYou ? ' (you)' : ''}</strong>
                     <span>${modeLabel(e.mode)} · ${e.rounds} rnd · ${formatScoreDate(e.date)}</span>
                   </div>
-                  <span class="score-points">${e.score.toLocaleString('de-DE')}</span>
+                  <span class="score-points">${e.score.toLocaleString('en-GB')}</span>
                 </li>`;
                 })
                 .join('')}
@@ -440,12 +869,16 @@ function renderMpCard(
   desc: string,
   meta: string,
   highlight: boolean,
+  action?: string,
+  ready = false,
 ): string {
+  const enabled = action === 'coop-decide' && ready;
+  const highlighted = highlight && enabled;
   return `
-    <button class="mp-card ${highlight ? 'mp-highlight' : ''}" disabled>
+    <button class="mp-card ${highlighted ? 'mp-highlight' : ''}" ${enabled ? `data-action="${action}"` : 'disabled'}>
       <div class="mp-card-top">
         <strong>${title}</strong>
-        <span class="soon-badge">Soon</span>
+        ${enabled ? '<span class="mp-badge">Play</span>' : '<span class="soon-badge">Soon</span>'}
       </div>
       <p>${desc}</p>
       <span class="mp-meta">${meta}</span>
@@ -458,7 +891,7 @@ function renderSessionHud(): string {
   return `
     <div class="session-hud">
       <span class="hearts" aria-label="${s.hearts} of ${MAX_HEARTS} hearts">${renderHearts(s.hearts, MAX_HEARTS)}</span>
-      <span class="session-score">${s.score.toLocaleString('de-DE')} pts</span>
+      <span class="session-score">${s.score.toLocaleString('en-GB')} pts</span>
       <span class="session-round">R${s.roundNumber}</span>
     </div>
   `;
@@ -487,13 +920,29 @@ function renderHintBanner(): string {
   `;
 }
 
+function renderClassicRegionOverlay(): string {
+  return renderClassicRegionOverlayHtml(state.classicSetupOpen, state.classicRegion);
+}
+
+function setClassicSetupOpen(open: boolean): void {
+  state.classicSetupOpen = open;
+  if (open) {
+    state.socialOpen = false;
+    state.creditsOpen = false;
+  }
+  if (state.screen === 'home') patchHomeOverlays();
+}
+
 function renderCreditsOverlay(): string {
   return renderCreditsOverlayHtml(state.creditsOpen);
 }
 
 function setCreditsOpen(open: boolean): void {
   state.creditsOpen = open;
-  if (open) state.socialOpen = false;
+  if (open) {
+    state.socialOpen = false;
+    state.classicSetupOpen = false;
+  }
   if (state.screen === 'home') patchHomeOverlays();
 }
 
@@ -504,17 +953,49 @@ function renderSocialOverlay(): string {
     view: state.socialView,
     selectedFriendId: state.socialSelectedFriendId,
     messageDraft: state.socialMessageDraft,
+    addNameDraft: state.socialAddNameDraft,
     toast: state.socialToast,
+    myPlayerId: getPlayerId(),
+    cloudSearchResults: state.socialCloudSearch,
   });
+}
+
+function renderCoopSetup(): string {
+  return renderCoopSetupOverlay({
+    open: state.coopSetupOpen,
+    friends: getFriends(),
+    selectedFriendId: state.coopSetupFriendId,
+    syncMode: state.coopSyncMode,
+    gameMode: state.coopGameMode,
+  });
+}
+
+function setCoopSetupOpen(open: boolean, friendId?: string | null): void {
+  state.coopSetupOpen = open;
+  if (friendId !== undefined) state.coopSetupFriendId = friendId;
+  if (open) {
+    state.socialOpen = false;
+    state.creditsOpen = false;
+    state.classicSetupOpen = false;
+  }
+  if (state.screen === 'home') patchHomeOverlays();
 }
 
 function setSocialOpen(open: boolean): void {
   state.socialOpen = open;
-  if (open) state.creditsOpen = false;
+  if (open) {
+    state.creditsOpen = false;
+    state.classicSetupOpen = false;
+    state.coopSetupOpen = false;
+    void syncSocialFromCloud().then(() => {
+      if (state.screen === 'home') patchHomeOverlays();
+    });
+  }
   if (!open) {
     state.socialView = 'list';
     state.socialSelectedFriendId = null;
     state.socialMessageDraft = '';
+    state.socialAddNameDraft = '';
     state.socialToast = null;
   }
   if (state.screen === 'home') patchHomeOverlays();
@@ -531,7 +1012,41 @@ function showSocialToast(text: string): void {
   }, 2600);
 }
 
+function captureSocialFormState(): void {
+  const msg = app.querySelector<HTMLInputElement>('[data-social-overlay] input[name="message"]');
+  if (msg) state.socialMessageDraft = msg.value;
+  const add = app.querySelector<HTMLInputElement>('#social-add-name');
+  if (add) state.socialAddNameDraft = add.value;
+}
+
+function patchMultiplayerPanel(): void {
+  const panel = app.querySelector('.multi-panel');
+  if (!panel) return;
+
+  const friends = getFriends();
+  const selectedId = state.coopSetupFriendId;
+  const coopReady =
+    friends.length > 0 &&
+    selectedId !== null &&
+    friends.some((f) => f.id === selectedId);
+
+  const friendSection = panel.querySelector('[data-mp-friend-section]');
+  if (friendSection) {
+    friendSection.outerHTML = renderMultiplayerFriendPicker(friends, selectedId);
+  }
+
+  const grid = panel.querySelector('[data-mp-grid]');
+  if (grid) {
+    grid.innerHTML = `
+      ${renderMpCard('Co-op Decide', 'Blind pin → reveal → vote on one final pin', '2 players · Live or async', true, 'coop-decide', coopReady)}
+      ${renderMpCard('1v1 Duel', 'Same scene, closest guess wins the round', 'Best of 5 · Coming soon', false)}
+      ${renderMpCard('Battle Royale', '4–8 players, elimination rounds', 'Coming soon', false)}
+    `;
+  }
+}
+
 function patchHomeOverlays(): void {
+  captureSocialFormState();
   const screen = app.querySelector('.screen-home');
   if (!screen) return;
 
@@ -548,6 +1063,19 @@ function patchHomeOverlays(): void {
     screen.querySelector('[data-credits-overlay]') ?? screen.querySelector('.credits-overlay');
   if (creditsEl) creditsEl.outerHTML = creditsHtml;
   else screen.insertAdjacentHTML('beforeend', creditsHtml);
+
+  const classicHtml = renderClassicRegionOverlay();
+  screen.querySelectorAll('.classic-overlay ~ .classic-overlay').forEach((el) => el.remove());
+  const classicEl =
+    screen.querySelector('[data-classic-overlay]') ?? screen.querySelector('.classic-overlay');
+  if (classicEl) classicEl.outerHTML = classicHtml;
+  else screen.insertAdjacentHTML('beforeend', classicHtml);
+
+  const coopHtml = renderCoopSetup();
+  screen.querySelectorAll('[data-coop-overlay] ~ [data-coop-overlay]').forEach((el) => el.remove());
+  const coopEl = screen.querySelector('[data-coop-overlay]');
+  if (coopEl) coopEl.outerHTML = coopHtml;
+  else screen.insertAdjacentHTML('beforeend', coopHtml);
 
   const badge = screen.querySelector('.social-btn-badge');
   const pending = getPendingRequestCount();
@@ -569,19 +1097,95 @@ function patchHomeOverlays(): void {
   const log = app.querySelector('[data-chat-log]');
   if (log) log.scrollTop = log.scrollHeight;
   syncSocialOnlineTimer();
+  if (state.playType === 'multiplayer') patchMultiplayerPanel();
 }
 
-function syncSocialOnlineTimer(): void {
+function patchSocialOnlineStatus(): void {
+  if (state.screen !== 'home' || !state.socialOpen) return;
+
+  app.querySelectorAll<HTMLElement>('.social-friend-row').forEach((row) => {
+    const friendId = row.dataset.friend;
+    if (!friendId) return;
+    const friend = getFriendById(friendId);
+    if (!friend) return;
+    const online = isFriendOnline(friendId);
+    row.querySelector('.social-status')?.classList.toggle('online', online);
+    row.querySelector('.social-status')?.classList.toggle('offline', !online);
+    const meta = row.querySelector('.social-friend-meta span');
+    if (meta) meta.textContent = `${online ? 'Online' : 'Offline'} · ${friend.tagline}`;
+  });
+
+  if (state.socialView === 'friend' && state.socialSelectedFriendId) {
+    const friend = getFriendById(state.socialSelectedFriendId);
+    if (friend) {
+      const online = isFriendOnline(state.socialSelectedFriendId);
+      const header = app.querySelector('.social-friend-detail-header');
+      header?.querySelector('.social-status')?.classList.toggle('online', online);
+      header?.querySelector('.social-status')?.classList.toggle('offline', !online);
+      const label = header?.querySelector('.social-friend-meta span');
+      if (label) label.textContent = `${online ? 'Online' : 'Offline'} · ${friend.tagline}`;
+    }
+  }
+}
+
+function clearSocialOnlineTimer(): void {
   if (socialOnlineTimer) {
     clearInterval(socialOnlineTimer);
     socialOnlineTimer = null;
   }
+}
+
+function syncSocialOnlineTimer(): void {
+  clearSocialOnlineTimer();
   if (state.screen === 'home' && state.socialOpen) {
     socialOnlineTimer = setInterval(() => {
-      if (state.screen === 'home' && state.socialOpen) patchHomeOverlays();
-      else syncSocialOnlineTimer();
+      if (state.screen === 'home' && state.socialOpen) patchSocialOnlineStatus();
+      else clearSocialOnlineTimer();
     }, 5000);
   }
+}
+
+function closeHomeOverlays(): void {
+  state.socialOpen = false;
+  state.creditsOpen = false;
+  state.classicSetupOpen = false;
+  state.coopSetupOpen = false;
+  state.socialView = 'list';
+  state.socialSelectedFriendId = null;
+  state.socialMessageDraft = '';
+  state.socialAddNameDraft = '';
+  state.socialToast = null;
+  clearSocialOnlineTimer();
+}
+
+function navigateFromHome(screen: Screen): void {
+  closeHomeOverlays();
+  state.screen = screen;
+  render();
+}
+
+function resolveLibraryIndex(): number {
+  const items = getVisiblePanoramas();
+  if (items.length === 0) return 0;
+  if (state.libraryViewId) {
+    const byId = items.findIndex((p) => p.id === state.libraryViewId);
+    if (byId >= 0) return byId;
+  }
+  return Math.min(Math.max(0, state.libraryIndex), items.length - 1);
+}
+
+function quitRun(): void {
+  void (async () => {
+    if (state.session && state.session.roundNumber > 0 && state.session.score > 0 && !gameStatsRecorded) {
+      const ok = await confirmDialog(
+        'Quit this run? Your score so far will be saved to the local scoreboard.',
+        { title: 'Quit run?', confirmLabel: 'Quit & save', cancelLabel: 'Keep playing' },
+      );
+      if (!ok) return;
+      finishRunEarly();
+    }
+    goHome();
+  })();
 }
 
 let socialEventsBound = false;
@@ -623,6 +1227,43 @@ function bindSocialEventsOnce(): void {
       return;
     }
 
+    if (target.closest('[data-action="select-classic"]')) {
+      if (state.screen === 'home') {
+        e.preventDefault();
+        if (!hasProfile()) {
+          state.screen = 'onboarding';
+          render();
+          return;
+        }
+        setClassicSetupOpen(true);
+      }
+      return;
+    }
+
+    if (target.closest('[data-action="close-classic-setup"]')) {
+      e.preventDefault();
+      setClassicSetupOpen(false);
+      return;
+    }
+
+    if (target.closest('[data-action="pick-classic-region"]') && state.classicSetupOpen) {
+      const btn = target.closest<HTMLElement>('[data-action="pick-classic-region"]');
+      const region = btn?.dataset.region as ClassicRegionFilter | undefined;
+      if (region && getClassicRegionPanoramaCount(region) > 0) {
+        state.classicRegion = region;
+        patchHomeOverlays();
+      }
+      return;
+    }
+
+    if (target.closest('[data-action="start-classic"]') && state.classicSetupOpen) {
+      e.preventDefault();
+      if (getClassicRegionPanoramaCount(state.classicRegion) === 0) return;
+      setClassicSetupOpen(false);
+      startGame('classic');
+      return;
+    }
+
     const tabBtn = target.closest<HTMLElement>('[data-social-tab]');
     if (tabBtn && state.socialOpen) {
       state.socialTab = tabBtn.dataset.socialTab as 'friends' | 'add';
@@ -651,27 +1292,249 @@ function bindSocialEventsOnce(): void {
 
     const acceptBtn = target.closest<HTMLElement>('[data-action="accept-request"]');
     if (acceptBtn && state.socialOpen) {
-      acceptFriendRequest(acceptBtn.dataset.request!);
-      showSocialToast('Request accepted.');
+      const requestId = acceptBtn.dataset.request ?? '';
+      if (requestId.startsWith('fr-')) {
+        void acceptFirestoreFriendRequest(requestId).then(() => syncSocialFromCloud()).then(() => {
+          showSocialToast('Request accepted — say hi!');
+          patchHomeOverlays();
+        });
+      } else {
+        acceptFriendRequest(requestId);
+        patchHomeOverlays();
+        showSocialToast('Request accepted — say hi!');
+      }
       return;
     }
 
     const declineBtn = target.closest<HTMLElement>('[data-action="decline-request"]');
     if (declineBtn && state.socialOpen) {
-      declineFriendRequest(declineBtn.dataset.request!);
-      showSocialToast('Request declined.');
+      const requestId = declineBtn.dataset.request ?? '';
+      if (requestId.startsWith('fr-')) {
+        void declineFirestoreFriendRequest(requestId).then(() => syncSocialFromCloud()).then(patchHomeOverlays);
+      } else {
+        declineFriendRequest(requestId);
+        showSocialToast('Request declined.');
+      }
       return;
     }
 
     const sendReqBtn = target.closest('[data-action="send-friend-request"]');
     if (sendReqBtn && state.socialOpen) {
       const input = app.querySelector<HTMLInputElement>('#social-add-name');
-      const result = sendFriendRequestByName(input?.value ?? '');
-      if (result === 'empty') showSocialToast('Enter a username first.');
-      else {
-        if (input) input.value = '';
-        showSocialToast('Friend request sent (demo).');
+      const name = input?.value ?? '';
+      const profile = getProfile();
+
+      if (isFirebaseConfigured() && name.trim().length >= 2 && profile) {
+        const exact = state.socialCloudSearch.find(
+          (u) => u.name.toLowerCase() === name.trim().toLowerCase(),
+        );
+        const hit = exact ?? state.socialCloudSearch[0];
+        if (hit) {
+          void sendFirestoreFriendRequest(hit.uid, hit.name, profile.name, profile.avatarConfig).then(
+            (id) => {
+              if (id) {
+                state.socialAddNameDraft = '';
+                if (input) input.value = '';
+                showSocialToast(`Request sent to ${hit.name}!`);
+                patchHomeOverlays();
+              } else {
+                showSocialToast('Could not send request.');
+              }
+            },
+          );
+          return;
+        }
       }
+
+      const result = sendFriendRequestByName(name, getPlayerId());
+      if (result === 'empty') showSocialToast('Enter a name to search.');
+      else if (result === 'not_found') showSocialToast('No player found with that name.');
+      else if (result === 'already_friend') showSocialToast('Already friends!');
+      else if (result === 'already_sent') showSocialToast('Request already pending.');
+      else if (result === 'self') showSocialToast('That is you!');
+      else {
+        state.socialAddNameDraft = '';
+        if (input) input.value = '';
+        showSocialToast('Friend request sent!');
+        patchHomeOverlays();
+      }
+      return;
+    }
+
+    const sendToBtn = target.closest<HTMLElement>('[data-action="send-request-to"]');
+    if (sendToBtn && state.socialOpen) {
+      const userId = sendToBtn.dataset.user;
+      const source = sendToBtn.dataset.source;
+      const profile = getProfile();
+      if (source === 'cloud' && userId && profile) {
+        const name = sendToBtn.dataset.name ?? 'Player';
+        void sendFirestoreFriendRequest(
+          userId,
+          name,
+          profile.name,
+          profile.avatarConfig,
+        ).then((id) => {
+          if (id) showSocialToast(`Request sent to ${name}!`);
+          else showSocialToast('Could not send request.');
+        });
+      } else if (userId) {
+        const user = getDirectoryUser(userId);
+        if (user) {
+          const result = sendFriendRequestToUser(user, getPlayerId());
+          if (result === 'sent') showSocialToast(`Request sent to ${user.name}!`);
+          else if (result === 'already_friend') showSocialToast('Already friends!');
+          else if (result === 'already_sent') showSocialToast('Request already pending.');
+          patchHomeOverlays();
+        }
+      }
+      return;
+    }
+
+    const cancelReqBtn = target.closest<HTMLElement>('[data-action="cancel-request"]');
+    if (cancelReqBtn && state.socialOpen) {
+      cancelOutgoingRequest(cancelReqBtn.dataset.request!);
+      showSocialToast('Request cancelled.');
+      patchHomeOverlays();
+      return;
+    }
+
+    if (target.closest('[data-action="open-coop-setup"]')) {
+      const btn = target.closest<HTMLElement>('[data-action="open-coop-setup"]');
+      setCoopSetupOpen(true, btn?.dataset.friend ?? null);
+      return;
+    }
+
+    if (target.closest('[data-action="close-coop-setup"]')) {
+      setCoopSetupOpen(false);
+      return;
+    }
+
+    const pickMpFriend = target.closest<HTMLElement>('[data-action="pick-mp-friend"]');
+    if (pickMpFriend && state.screen === 'home' && state.playType === 'multiplayer') {
+      state.coopSetupFriendId = pickMpFriend.dataset.friend ?? null;
+      patchMultiplayerPanel();
+      void hydrateAvatarCanvases(app);
+      return;
+    }
+
+    const pickCoopFriend = target.closest<HTMLElement>('[data-action="pick-coop-friend"]');
+    if (pickCoopFriend && state.coopSetupOpen) {
+      state.coopSetupFriendId = pickCoopFriend.dataset.friend ?? null;
+      patchHomeOverlays();
+      return;
+    }
+
+    const pickCoopSync = target.closest<HTMLElement>('[data-action="pick-coop-sync"]');
+    if (pickCoopSync && state.coopSetupOpen) {
+      state.coopSyncMode = (pickCoopSync.dataset.sync as 'live' | 'async') ?? 'live';
+      patchHomeOverlays();
+      return;
+    }
+
+    const pickCoopMode = target.closest<HTMLElement>('[data-action="pick-coop-mode"]');
+    if (pickCoopMode && state.coopSetupOpen) {
+      state.coopGameMode = (pickCoopMode.dataset.mode as GameMode) ?? 'classic';
+      patchHomeOverlays();
+      return;
+    }
+
+    if (target.closest('[data-action="send-coop-invite"]') && state.coopSetupOpen) {
+      sendCoopInviteFromSetup();
+      return;
+    }
+
+    const acceptCoopBtn = target.closest<HTMLElement>('[data-action="accept-coop-invite"]');
+    if (acceptCoopBtn && state.socialOpen) {
+      void acceptAndJoinCoopInvite(acceptCoopBtn.dataset.invite!);
+      return;
+    }
+
+    const acceptCoopHome = target.closest<HTMLElement>('[data-action="accept-coop-home"]');
+    if (acceptCoopHome) {
+      void acceptAndJoinCoopInvite(acceptCoopHome.dataset.invite!);
+      return;
+    }
+
+    const declineCoopHome = target.closest<HTMLElement>('[data-action="decline-coop-home"]');
+    if (declineCoopHome) {
+      declineCoopInvite(declineCoopHome.dataset.invite!);
+      void syncSocialFromCloud().then(() => render());
+      return;
+    }
+
+    const declineCoopBtn = target.closest<HTMLElement>('[data-action="decline-coop-invite"]');
+    if (declineCoopBtn && state.socialOpen) {
+      declineCoopInvite(declineCoopBtn.dataset.invite!);
+      showSocialToast('Invite declined.');
+      patchHomeOverlays();
+      return;
+    }
+
+    const cancelCoopBtn = target.closest<HTMLElement>('[data-action="cancel-coop-invite"]');
+    if (cancelCoopBtn && state.socialOpen) {
+      cancelCoopInvite(cancelCoopBtn.dataset.invite!);
+      showSocialToast('Invite cancelled.');
+      patchHomeOverlays();
+      return;
+    }
+
+    const startCoopBtn = target.closest<HTMLElement>('[data-action="start-coop-room"]');
+    if (startCoopBtn) {
+      const roomId = startCoopBtn.dataset.room;
+      if (roomId) {
+        setSocialOpen(false);
+        startCoopGame(roomId);
+      }
+      return;
+    }
+
+    if (target.closest('[data-action="coop-decide"]') && state.screen === 'home') {
+      if (!hasProfile()) {
+        state.screen = 'onboarding';
+        render();
+        return;
+      }
+      if (!state.coopSetupFriendId) {
+        showSocialToast('Pick a friend from your list first.');
+        return;
+      }
+      state.playType = 'multiplayer';
+      setCoopSetupOpen(true, state.coopSetupFriendId);
+      return;
+    }
+  });
+
+  app.addEventListener('input', (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.matches('[data-social-overlay] input[name="message"]')) {
+      state.socialMessageDraft = target.value;
+    }
+    if (target.id === 'social-add-name') {
+      state.socialAddNameDraft = target.value;
+      if (state.socialOpen && state.socialTab === 'add') {
+        void searchFirestoreUsersByName(target.value, getPlayerId()).then((hits) => {
+          state.socialCloudSearch = hits;
+          patchHomeOverlays();
+        });
+      }
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || state.screen !== 'home') return;
+    if (state.coopSetupOpen) {
+      e.preventDefault();
+      setCoopSetupOpen(false);
+    } else if (state.socialOpen) {
+      e.preventDefault();
+      setSocialOpen(false);
+    } else if (state.creditsOpen) {
+      e.preventDefault();
+      setCreditsOpen(false);
+    } else if (state.classicSetupOpen) {
+      e.preventDefault();
+      setClassicSetupOpen(false);
     }
   });
 
@@ -702,32 +1565,37 @@ function renderGameChrome(): string {
 function renderExplore(): string {
   const round = state.round!;
   const showYearHint = round.answer.year != null;
+  const coopRoom = state.isCoopRun && state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
+  const coopHud =
+    coopRoom && state.coopMyRole ? renderCoopHud(coopRoom, state.coopMyRole) : '';
 
   return `
     <div class="screen screen-explore">
       <div class="top-bar">
         <button class="icon-btn" data-action="quit" aria-label="Quit">←</button>
         <div class="top-bar-center">
-          <span class="mode-pill mode-${state.mode}">${modeLabel(state.mode!)}</span>
+          <span class="mode-pill mode-${state.mode}">${coopRoom ? 'Co-op' : state.session?.isDaily ? 'Daily' : state.mode === 'classic' && state.classicRegion !== 'world' ? `Classic · ${classicRegionLabel(state.classicRegion)}` : modeLabel(state.mode!)}</span>
           <span class="round-title">${round.title}</span>
         </div>
         <div class="top-bar-right">
-          ${renderGameAvatarButton()}
-          ${renderSessionHud()}
+          ${state.isCoopRun ? '' : renderGameAvatarButton()}
+          ${state.isCoopRun ? '' : renderSessionHud()}
         </div>
       </div>
 
-      ${renderGameChrome()}
+      ${coopHud}
+      ${state.isCoopRun ? '' : renderGameChrome()}
 
-      ${round.isAiGenerated ? '<div class="ai-banner">AI / speculative content (demo)</div>' : ''}
+      ${round.isAiGenerated ? '<div class="ai-banner">Speculative / AI-assisted scene</div>' : ''}
 
       <div id="pano" class="pano-container" aria-label="360 panorama — drag to look around"></div>
 
       <div class="explore-hud">
-        <p class="explore-tip">Drag to look around · Pinch to zoom</p>
+        <p class="explore-tip">${state.isCoopRun ? 'Co-op: your pin stays hidden until reveal' : 'Drag to look around · Pinch to zoom'}</p>
         ${showYearHint ? '<p class="explore-tip accent">You will also guess the year</p>' : ''}
-        <button class="btn btn-primary btn-lg" data-action="guess">Drop your pin</button>
+        <button class="btn btn-primary btn-lg" data-action="guess">${state.isCoopRun ? 'Drop your hidden pin' : 'Drop your pin'}</button>
       </div>
+      ${renderCoopMatchChatChrome()}
     </div>
   `;
 }
@@ -737,22 +1605,26 @@ function renderGuess(): string {
   const defaultYear =
     state.mode === 'past' ? 1920 : state.mode === 'future' ? 2050 : new Date().getFullYear();
   const year = state.guess?.year ?? defaultYear;
+  const coopRoom = state.isCoopRun && state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
+  const coopHud =
+    coopRoom && state.coopMyRole ? renderCoopHud(coopRoom, state.coopMyRole) : '';
 
   return `
     <div class="screen screen-guess">
       <div class="guess-header">
         <button class="icon-btn" data-action="back-explore" aria-label="Back">←</button>
         <div class="guess-header-text">
-          <h2>Where is this?</h2>
+          <h2>${state.isCoopRun ? 'Hidden team pin' : 'Where is this?'}</h2>
           ${needsYear ? '<p>Tap the map, then set the year</p>' : '<p>Tap the map to place your pin</p>'}
         </div>
         <div class="guess-header-right">
-          ${renderGameAvatarButton()}
-          ${state.session ? renderSessionHud() : ''}
+          ${state.isCoopRun ? '' : renderGameAvatarButton()}
+          ${state.isCoopRun ? '' : state.session ? renderSessionHud() : ''}
         </div>
       </div>
 
-      ${renderGameChrome()}
+      ${coopHud}
+      ${state.isCoopRun ? '' : renderGameChrome()}
 
       <div id="guess-map" class="map-container"></div>
 
@@ -775,6 +1647,7 @@ function renderGuess(): string {
         }
         <button class="btn btn-primary btn-lg" data-action="submit" disabled>Submit guess</button>
       </div>
+      ${renderCoopMatchChatChrome()}
     </div>
   `;
 }
@@ -808,10 +1681,12 @@ function renderResult(): string {
   const score = scoreGuess(round, guess);
   const grade = scoreGrade(score.points, score.maxPoints);
   const s = state.session!;
-  const canContinue = s.hearts > 0;
+  const canContinue = s.hearts > 0 && !s.isDaily;
+  const isDaily = Boolean(s.isDaily);
 
   return `
     <div class="screen screen-result">
+      ${isDaily ? '<div class="daily-result-banner">📅 Daily ChronoPin complete!</div>' : ''}
       <div class="result-top">
         ${renderSessionHud()}
       </div>
@@ -819,7 +1694,7 @@ function renderResult(): string {
       <div class="result-header">
         <span class="grade-badge">${grade}</span>
         <h2>${Math.round((score.points / score.maxPoints) * 100)}%</h2>
-        <p class="score-sub">+${score.points.toLocaleString('de-DE')} pts this round</p>
+        <p class="score-sub">+${score.points.toLocaleString('en-GB')} pts this round</p>
         ${
           score.lostHeart
             ? `<p class="heart-lost">♥ Lost a heart — ${score.failReason}</p>`
@@ -853,9 +1728,15 @@ function renderResult(): string {
       </div>
 
       <div class="result-actions">
-        <button class="btn btn-secondary" data-action="quit">${canContinue ? 'Quit' : 'Home'}</button>
-        <button class="btn btn-primary" data-action="next">${canContinue ? 'Next round →' : 'See results'}</button>
+        ${
+          isDaily
+            ? `<button class="btn btn-primary btn-lg" data-action="open-daily-wheel-result">Spin for reward 🎡</button>
+               <button class="btn btn-secondary" data-action="quit">Home</button>`
+            : `<button class="btn btn-secondary" data-action="quit">${canContinue ? 'Quit' : 'Home'}</button>
+               <button class="btn btn-primary" data-action="next">${canContinue ? 'Next round →' : 'See results'}</button>`
+        }
       </div>
+      ${isDaily || state.dailyWheelOpen ? renderDailyWheelOverlay(state.dailyWheelOpen, state.dailyWheelResult) : ''}
     </div>
   `;
 }
@@ -874,7 +1755,7 @@ function renderGameOver(): string {
         <div class="gameover-stats">
           <div class="stat-card stat-highlight">
             <span class="stat-label">Final score</span>
-            <strong>${s.score.toLocaleString('de-DE')}</strong>
+            <strong>${s.score.toLocaleString('en-GB')}</strong>
           </div>
           <div class="stat-card">
             <span class="stat-label">Mode</span>
@@ -898,6 +1779,7 @@ function renderGameOver(): string {
 
 function renderLibrary(): string {
   const items = getVisiblePanoramas();
+  const trashed = getTrashedPanoramas();
 
   return `
     <div class="screen screen-library">
@@ -905,28 +1787,29 @@ function renderLibrary(): string {
         <button class="icon-btn" data-action="home" aria-label="Home">←</button>
         <div>
           <h2>Panorama Library</h2>
-          <p>${items.length} scenes · tap to preview</p>
+          <p>${items.length} active · ${trashed.length} in trash</p>
         </div>
+        <button class="icon-btn library-map-btn" data-action="library-map" aria-label="World map" title="World map">🌍</button>
       </div>
 
       ${
         items.length === 0
           ? `<div class="library-empty">
-              <p>All panoramas hidden.</p>
-              <button class="btn btn-secondary" data-action="restore-all">Restore all</button>
+              <p>No active panoramas.</p>
+              ${trashed.length > 0 ? `<button class="btn btn-secondary" data-action="restore-all-trash">Restore all from trash</button>` : ''}
             </div>`
           : `<ul class="library-list">
               ${items
                 .map(
                   (p, i) => `
                 <li class="library-item" data-id="${p.id}" data-index="${i}">
-                  <img class="library-thumb" src="${panoramaUrl(p)}" alt="" loading="lazy" />
+                  <img class="library-thumb" src="${panoramaUrl(p)}" alt="${escapeHtml(p.title)}" loading="lazy" />
                   <div class="library-meta">
-                    <strong>${p.title}${p.isNew ? ' <span class="library-new-badge">new</span>' : ''}</strong>
+                    <strong>${p.title}${renderPanoramaBadges(p)}</strong>
                     <span>${p.region}</span>
                     <span class="library-tags">${p.modes.join(' · ')}</span>
                   </div>
-                  <button class="library-delete" data-delete="${p.id}" aria-label="Remove ${p.title}" title="Remove from library">🗑</button>
+                  <button class="library-delete" data-delete="${p.id}" aria-label="Move ${p.title} to trash" title="Move to trash">🗑</button>
                 </li>`,
                 )
                 .join('')}
@@ -934,8 +1817,26 @@ function renderLibrary(): string {
       }
 
       ${
-        localStorage.getItem('chronopin-hidden-panos')
-          ? `<button class="btn btn-secondary library-restore" data-action="restore-all">Restore hidden panoramas</button>`
+        trashed.length > 0
+          ? `<section class="library-trash-section">
+              <h3 class="library-trash-title">🗑 Trash (${trashed.length})</h3>
+              <p class="hint">Removed scenes stay here until you restore them.</p>
+              <ul class="library-list library-trash-list">
+                ${trashed
+                  .map(
+                    (p) => `
+                  <li class="library-item library-item-trash" data-id="${p.id}">
+                    <div class="library-meta">
+                      <strong>${p.title}</strong>
+                      <span>${p.region}</span>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" data-restore="${p.id}">Restore</button>
+                  </li>`,
+                  )
+                  .join('')}
+              </ul>
+              <button class="btn btn-secondary library-restore" data-action="restore-all-trash">Restore all from trash</button>
+            </section>`
           : ''
       }
     </div>
@@ -944,7 +1845,8 @@ function renderLibrary(): string {
 
 function renderLibraryView(): string {
   const items = getVisiblePanoramas();
-  const idx = state.libraryIndex;
+  const idx = resolveLibraryIndex();
+  state.libraryIndex = idx;
   const item = items[idx];
   if (!item) return renderLibrary();
 
@@ -953,7 +1855,7 @@ function renderLibraryView(): string {
       <div class="top-bar">
         <button class="icon-btn" data-action="library-back" aria-label="Back to list">←</button>
         <div class="top-bar-center">
-          <span class="round-title">${item.title}</span>
+          <span class="round-title">${item.title}${renderPanoramaBadges(item)}</span>
           <span class="library-view-region">${item.region}</span>
         </div>
         <span class="library-nav-count">${idx + 1}/${items.length}</span>
@@ -963,16 +1865,17 @@ function renderLibraryView(): string {
 
       <div class="library-view-bar">
         <button class="btn btn-secondary" data-action="lib-prev" ${idx === 0 ? 'disabled' : ''}>← Prev</button>
-        <button class="btn btn-secondary" data-action="lib-delete" data-id="${item.id}">Remove</button>
+        <button class="btn btn-secondary" data-action="lib-delete" data-id="${item.id}">Trash</button>
         <button class="btn btn-secondary" data-action="lib-next" ${idx >= items.length - 1 ? 'disabled' : ''}>Next →</button>
       </div>
+      <p class="library-view-attribution">${escapeHtml(item.attribution)} · ${escapeHtml(item.license)}</p>
     </div>
   `;
 }
 
 function bindScreenEvents(screen: Screen): void {
-  if (screen === 'onboarding') bindProfileFormEvents('onboarding');
-  if (screen === 'player-info') bindProfileFormEvents('player-info');
+  if (screen === 'onboarding') bindLoginEvents();
+  if (screen === 'player-info') bindProfileFormEvents();
   if (screen === 'home') bindHomeEvents();
   if (screen === 'explore') bindExploreEvents();
   if (screen === 'guess') bindGuessEvents();
@@ -980,7 +1883,12 @@ function bindScreenEvents(screen: Screen): void {
   if (screen === 'gameover') bindGameOverEvents();
   if (screen === 'library') bindLibraryEvents();
   if (screen === 'library-view') bindLibraryViewEvents();
+  if (screen === 'library-map') bindLibraryMapEvents();
   if (screen === 'scoreboard') bindScoreboardEvents();
+  if (screen === 'coop-wait') bindCoopWaitEvents();
+  if (screen === 'coop-reveal') bindCoopRevealEvents();
+  if (screen === 'coop-vote') bindCoopVoteEvents();
+  if (screen === 'coop-result') bindCoopResultEvents();
 }
 
 function patchAvatarEditor(): void {
@@ -1058,13 +1966,154 @@ function bindAvatarEditorEvents(): void {
   });
 }
 
-function bindProfileFormEvents(mode: 'onboarding' | 'player-info'): void {
-  if (mode === 'player-info') {
-    app.querySelector('[data-action="home"]')?.addEventListener('click', () => {
+function isMatchChatScreen(): boolean {
+  return (
+    state.isCoopRun &&
+    (state.screen === 'explore' ||
+      state.screen === 'guess' ||
+      state.screen === 'coop-wait' ||
+      state.screen === 'coop-reveal' ||
+      state.screen === 'coop-vote' ||
+      state.screen === 'coop-result')
+  );
+}
+
+function renderCoopMatchChatChrome(): string {
+  if (!state.isCoopRun || !state.coopRoomId || !state.coopMyRole) return '';
+  const room = getCoopRoom(state.coopRoomId);
+  if (!room) return '';
+  return renderMatchChatOverlay({
+    room,
+    myRole: state.coopMyRole,
+    open: state.matchChatOpen,
+    draft: state.matchChatDraft,
+    unread: state.matchChatUnread,
+    messages: getMatchMessages(state.coopRoomId),
+  });
+}
+
+function stopMatchChatListener(): void {
+  matchChatUnsub?.();
+  matchChatUnsub = null;
+}
+
+function pushMatchChatToast(msg: MatchChatMessage): void {
+  const room = state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
+  if (!room || !state.coopMyRole) return;
+  const partnerId = getCoopPartnerId(room, state.coopMyRole);
+  const partner = getFriendById(partnerId);
+  const container = app.querySelector('[data-match-chat-toasts]');
+  if (!container) return;
+  if (container.querySelector(`[data-match-chat-toast="${msg.id}"]`)) return;
+
+  container.insertAdjacentHTML(
+    'beforeend',
+    renderMatchChatToast(msg, partner?.avatarConfig ?? null),
+  );
+  void hydrateAvatarCanvases(container as HTMLElement);
+
+  const el = container.querySelector(`[data-match-chat-toast="${msg.id}"]`);
+  if (el) {
+    requestAnimationFrame(() => el.classList.add('visible'));
+    window.setTimeout(() => {
+      el.classList.add('leaving');
+      window.setTimeout(() => el.remove(), 280);
+    }, 4200);
+  }
+}
+
+function handleIncomingMatchMessage(msg: MatchChatMessage): void {
+  if (msg.senderId === getPlayerId()) return;
+  if (!state.matchChatOpen) state.matchChatUnread += 1;
+  if (isMatchChatScreen()) {
+    pushMatchChatToast(msg);
+    patchMatchChatOverlay();
+  }
+}
+
+function startMatchChatListener(roomId: string): void {
+  stopMatchChatListener();
+  state.matchChatUnread = 0;
+  state.matchChatOpen = false;
+  state.matchChatDraft = '';
+
+  void pullCoopMatchChat(roomId).catch((err) =>
+    console.warn('[ChronoPin] Match chat pull failed:', err),
+  );
+
+  const unsub = subscribeCoopMatchChat(roomId, handleIncomingMatchMessage);
+  if (unsub) matchChatUnsub = unsub;
+}
+
+function patchMatchChatOverlay(): void {
+  if (!isMatchChatScreen()) return;
+  const html = renderCoopMatchChatChrome();
+  const existing = app.querySelector('[data-match-chat-root]');
+  if (existing) existing.outerHTML = html;
+  else app.insertAdjacentHTML('beforeend', html);
+  const log = app.querySelector('[data-match-chat-log]');
+  if (log) log.scrollTop = log.scrollHeight;
+  void hydrateAvatarCanvases(app);
+}
+
+function sendCurrentMatchChat(text: string): void {
+  if (!state.coopRoomId) return;
+  const profile = getProfile();
+  if (!profile) return;
+  const msg = sendMatchChatMessage(state.coopRoomId, getPlayerId(), profile.name, text);
+  if (!msg) return;
+  state.matchChatDraft = '';
+  patchMatchChatOverlay();
+}
+
+function bindLoginEvents(): void {
+  const form = app.querySelector('[data-action="login-form"]');
+  form?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = app.querySelector('#login-name') as HTMLInputElement | null;
+    const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    const errEl = app.querySelector('[data-login-error]');
+    if (!input || !submitBtn) return;
+
+    void (async () => {
+      submitBtn.disabled = true;
+      if (errEl) errEl.textContent = '';
+
+      const result = await loginWithName(input.value);
+      if (!result.ok) {
+        if (errEl) errEl.textContent = result.error;
+        submitBtn.disabled = false;
+        return;
+      }
+
+      state.avatarConfig = normalizeAvatarConfig(result.profile.avatarConfig);
+      if (isFirebaseConfigured()) {
+        try {
+          await syncSocialFromCloud();
+          startCloudCoopInviteListener(() => {
+            if (state.screen === 'home') render();
+            else if (state.socialOpen) patchHomeOverlays();
+          });
+        } catch (err) {
+          console.warn('[ChronoPin] Post-login cloud sync failed:', err);
+        }
+      }
+
       state.screen = 'home';
       render();
-    });
-  }
+    })();
+  });
+
+  requestAnimationFrame(() => {
+    app.querySelector<HTMLInputElement>('#login-name')?.focus();
+  });
+}
+
+function bindProfileFormEvents(): void {
+  app.querySelector('[data-action="home"]')?.addEventListener('click', () => {
+    state.screen = 'home';
+    render();
+  });
 
   bindAvatarEditorEvents();
 
@@ -1072,18 +2121,138 @@ function bindProfileFormEvents(mode: 'onboarding' | 'player-info'): void {
     const nameInput = app.querySelector('#player-name') as HTMLInputElement;
     const name = nameInput?.value ?? '';
     const avatarConfig = normalizeAvatarConfig(state.avatarConfig);
-    if (mode === 'player-info') {
-      updateProfile(name, avatarConfig);
+    void (async () => {
+      const uid = await waitForFirebaseUid();
+      const profile = updateProfile(name, avatarConfig, uid ?? undefined);
+      if (uid) {
+        try {
+          await pushProfileToFirestore(profile, uid);
+        } catch (err) {
+          console.warn('[ChronoPin] Profile cloud sync failed:', err);
+        }
+      }
+      state.avatarConfig = profile.avatarConfig;
       state.screen = 'home';
-    } else {
-      saveProfile(name, avatarConfig);
-      state.screen = 'home';
-    }
-    render();
+      render();
+    })();
+  });
+
+  app.querySelector('[data-action="factory-reset"]')?.addEventListener('click', () => {
+    void (async () => {
+      const ok = await confirmDialog(
+        'This clears all local progress, friends, scores, and settings. You will return to the login screen.',
+        {
+          title: 'Factory Reset',
+          confirmLabel: 'Reset everything',
+          cancelLabel: 'Cancel',
+          danger: true,
+        },
+      );
+      if (!ok) return;
+      stopCoopFirestoreListener();
+      stopCloudCoopInviteListener();
+      stopMatchChatListener();
+      clearSocialOnlineTimer();
+      clearDailyCountdownTimer();
+      await factoryResetApp();
+      resetStateForLogin();
+      render();
+    })();
   });
 }
 
+function resetStateForLogin(): void {
+  scoreSavedForSession = false;
+  gameStatsRecorded = false;
+  state = {
+    screen: 'onboarding',
+    playType: 'solo',
+    mode: null,
+    round: null,
+    guess: null,
+    session: null,
+    libraryIndex: 0,
+    libraryViewId: null,
+    scoreboardFilter: 'all',
+    avatarConfig: getDefaultAvatarConfig(),
+    avatarEditorOpenCategory: null,
+    inventoryOpen: false,
+    socialOpen: false,
+    socialTab: 'friends',
+    socialView: 'list',
+    socialSelectedFriendId: null,
+    socialMessageDraft: '',
+    socialAddNameDraft: '',
+    socialToast: null,
+    creditsOpen: false,
+    classicSetupOpen: false,
+    classicRegion: 'world',
+    isDailyRun: false,
+    dailyWheelOpen: false,
+    dailyWheelResult: null,
+    isCoopRun: false,
+    coopRoomId: null,
+    coopMyRole: null,
+    coopSetupOpen: false,
+    coopSetupFriendId: null,
+    coopSyncMode: 'live',
+    coopGameMode: 'classic',
+    socialCloudSearch: [],
+    matchChatOpen: false,
+    matchChatDraft: '',
+    matchChatUnread: 0,
+  };
+}
+
 let inventoryEventsBound = false;
+let matchChatEventsBound = false;
+
+function bindMatchChatEventsOnce(): void {
+  if (matchChatEventsBound) return;
+  matchChatEventsBound = true;
+
+  app.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+
+    if (target.closest('[data-action="toggle-match-chat"]')) {
+      e.preventDefault();
+      state.matchChatOpen = !state.matchChatOpen;
+      if (state.matchChatOpen) state.matchChatUnread = 0;
+      patchMatchChatOverlay();
+      return;
+    }
+
+    if (target.closest('[data-action="close-match-chat"]')) {
+      e.preventDefault();
+      state.matchChatOpen = false;
+      patchMatchChatOverlay();
+      return;
+    }
+
+    const quickBtn = target.closest<HTMLElement>('[data-action="match-chat-quick"]');
+    if (quickBtn && state.isCoopRun) {
+      e.preventDefault();
+      sendCurrentMatchChat(quickBtn.dataset.text ?? '');
+    }
+  });
+
+  app.addEventListener('submit', (e) => {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement) || !form.matches('[data-action="send-match-chat"]')) return;
+    e.preventDefault();
+    const input = form.querySelector<HTMLInputElement>('input[name="message"]');
+    sendCurrentMatchChat(input?.value ?? '');
+  });
+
+  app.addEventListener('input', (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.matches('.match-chat-input[name="message"]')) {
+      state.matchChatDraft = target.value;
+    }
+  });
+}
 
 function bindInventoryEventsOnce(): void {
   if (inventoryEventsBound) return;
@@ -1187,7 +2356,13 @@ function syncInventoryOverlay(screen: Element): void {
 function useInventoryItem(itemId: InventoryItemId): void {
   if (!state.session || !state.round) return;
   const item = getInventoryItem(itemId);
-  if (!item?.usable || state.session.usedItemsThisRound.includes(itemId)) return;
+  if (!item || !canUseInventoryItem(itemId, item.usable, state.session.usedItemsThisRound)) return;
+  if (!item.usable) return;
+
+  const uses = countItemUsesThisRound(state.session.usedItemsThisRound, itemId);
+  if (uses >= 1 && getStashItemCharges(itemId) > 0) {
+    consumeStashItemCharge(itemId);
+  }
 
   const { lat, lng } = state.round.answer;
   let text = '';
@@ -1218,10 +2393,18 @@ function bindScoreboardEvents(): void {
   });
 
   app.querySelector('[data-action="clear-scores"]')?.addEventListener('click', () => {
-    if (confirm('Clear all local scores?')) {
-      clearScoreboard();
-      render();
-    }
+    void (async () => {
+      const ok = await confirmDialog('Clear all local scores? This cannot be undone.', {
+        title: 'Clear scoreboard',
+        confirmLabel: 'Clear all',
+        cancelLabel: 'Cancel',
+        danger: true,
+      });
+      if (ok) {
+        clearScoreboard();
+        render();
+      }
+    })();
   });
 }
 
@@ -1230,16 +2413,26 @@ function bindHomeEvents(): void {
     btn.addEventListener('click', () => {
       const play = (btn as HTMLElement).dataset.play as 'solo' | 'multiplayer';
       state.playType = play;
+      if (play === 'multiplayer') {
+        const friends = getFriends();
+        if (friends.length > 0 && !state.coopSetupFriendId) {
+          state.coopSetupFriendId = friends[0]!.id;
+        }
+      }
       app.querySelectorAll('.segmented-btn').forEach((b) => {
         b.classList.toggle('active', b === btn);
         b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
       });
       app.querySelector('.solo-panel')?.classList.toggle('hidden', play !== 'solo');
       app.querySelector('.multi-panel')?.classList.toggle('hidden', play !== 'multiplayer');
+      if (play === 'multiplayer') {
+        patchMultiplayerPanel();
+        void hydrateAvatarCanvases(app);
+      }
     });
   });
 
-  app.querySelectorAll('.mode-card').forEach((card) => {
+  app.querySelectorAll('[data-action="start-mode"]').forEach((card) => {
     card.addEventListener('click', () => {
       if (!hasProfile()) {
         state.screen = 'onboarding';
@@ -1251,25 +2444,77 @@ function bindHomeEvents(): void {
   });
 
   app.querySelector('[data-action="library"]')?.addEventListener('click', () => {
-    state.screen = 'library';
-    render();
+    navigateFromHome('library');
   });
 
   app.querySelector('[data-action="scoreboard"]')?.addEventListener('click', () => {
-    state.screen = 'scoreboard';
-    render();
+    navigateFromHome('scoreboard');
   });
 
   app.querySelector('[data-action="player-info"]')?.addEventListener('click', () => {
     const profile = getProfile();
     if (profile) state.avatarConfig = normalizeAvatarConfig(profile.avatarConfig);
-    state.screen = 'player-info';
+    navigateFromHome('player-info');
+  });
+}
+
+function bindCoopWaitEvents(): void {
+  app.querySelector('[data-action="quit"]')?.addEventListener('click', goHome);
+  app.querySelector('[data-action="coop-refresh"]')?.addEventListener('click', routeCoopScreen);
+  app.querySelector('[data-action="coop-simulate-partner"]')?.addEventListener('click', () => {
+    const room = state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
+    if (!room || !state.round) return;
+    simulatePartnerPin(room.id, state.round.answer.lat, state.round.answer.lng);
+    routeCoopScreen();
+  });
+}
+
+function bindCoopRevealEvents(): void {
+  app.querySelector('[data-action="coop-to-vote"]')?.addEventListener('click', () => {
+    if (state.coopRoomId) advanceCoopToVote(state.coopRoomId);
+    routeCoopScreen();
+  });
+}
+
+function bindCoopVoteEvents(): void {
+  app.querySelector('[data-action="quit"]')?.addEventListener('click', goHome);
+  app.querySelectorAll('[data-action="coop-vote"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!state.coopRoomId || !state.coopMyRole) return;
+      const vote = (btn as HTMLElement).dataset.vote as CoopVoteChoice;
+      submitCoopVote(state.coopRoomId, state.coopMyRole, vote);
+      routeCoopScreen();
+    });
+  });
+  app.querySelector('[data-action="coop-simulate-vote"]')?.addEventListener('click', () => {
+    if (state.coopRoomId) simulatePartnerVote(state.coopRoomId);
+    routeCoopScreen();
+  });
+}
+
+function bindCoopResultEvents(): void {
+  app.querySelector('[data-action="quit"]')?.addEventListener('click', goHome);
+  app.querySelector('[data-action="coop-play-again"]')?.addEventListener('click', () => {
+    const room = state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
+    if (!room) return goHome();
+    finishCoopRoom(room.id);
+    state.coopSetupFriendId = room.guestFriendId;
+    state.coopSyncMode = room.syncMode;
+    state.coopGameMode = room.gameMode;
+    state.screen = 'home';
+    state.isCoopRun = false;
+    state.coopRoomId = null;
+    state.coopMyRole = null;
+    setCoopSetupOpen(true, room.guestFriendId);
     render();
   });
 }
 
 function bindExploreEvents(): void {
-  app.querySelector('[data-action="quit"]')?.addEventListener('click', goHome);
+  app.querySelector('[data-action="quit"]')?.addEventListener('click', () => {
+    if (state.isCoopRun) goHome();
+    else quitRun();
+  });
   app.querySelector('[data-action="guess"]')?.addEventListener('click', () => {
     state.screen = 'guess';
     if (!state.guess && state.round?.answer.year != null) {
@@ -1311,6 +2556,10 @@ function bindGuessEvents(): void {
 
 function bindResultEvents(): void {
   app.querySelector('[data-action="quit"]')?.addEventListener('click', () => {
+    if (state.session?.isDaily) {
+      goHome();
+      return;
+    }
     finishRunEarly();
     goHome();
   });
@@ -1364,12 +2613,19 @@ function bindGameOverEvents(): void {
 function bindLibraryEvents(): void {
   app.querySelector('[data-action="home"]')?.addEventListener('click', goHome);
 
-  app.querySelectorAll('.library-item').forEach((item) => {
+  app.querySelector('[data-action="library-map"]')?.addEventListener('click', () => {
+    state.screen = 'library-map';
+    render();
+  });
+
+  app.querySelectorAll('.library-item:not(.library-item-trash)').forEach((item) => {
     item.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('[data-delete]')) return;
+      const id = (item as HTMLElement).dataset.id;
+      if (id) markPanoramaSeen(id);
       const index = Number((item as HTMLElement).dataset.index);
       state.libraryIndex = index;
-      state.libraryViewId = (item as HTMLElement).dataset.id ?? null;
+      state.libraryViewId = id ?? null;
       state.screen = 'library-view';
       render();
     });
@@ -1379,20 +2635,45 @@ function bindLibraryEvents(): void {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = (btn as HTMLElement).dataset.delete!;
-      if (confirm('Remove this panorama from the library? (Hidden locally — file stays in repo.)')) {
-        hidePanorama(id);
-        render();
-      }
+      void (async () => {
+        const ok = await confirmDialog(
+          'Move this panorama to trash? It will be hidden from gameplay until restored.',
+          { title: 'Move to trash', confirmLabel: 'Move to trash', danger: true },
+        );
+        if (ok) {
+          trashPanorama(id);
+          render();
+        }
+      })();
     });
   });
 
-  app.querySelector('[data-action="restore-all"]')?.addEventListener('click', () => {
-    restoreAllPanoramas();
+  app.querySelectorAll('[data-restore]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      restoreFromTrash((btn as HTMLElement).dataset.restore!);
+      render();
+    });
+  });
+
+  app.querySelector('[data-action="restore-all-trash"]')?.addEventListener('click', () => {
+    restoreAllFromTrash();
+    render();
+  });
+}
+
+function bindLibraryMapEvents(): void {
+  app.querySelector('[data-action="library"]')?.addEventListener('click', () => {
+    state.screen = 'library';
     render();
   });
 }
 
 function bindLibraryViewEvents(): void {
+  const items = getVisiblePanoramas();
+  const item = items[state.libraryIndex];
+  if (item) markPanoramaSeen(item.id);
+
   app.querySelector('[data-action="library-back"]')?.addEventListener('click', () => {
     state.screen = 'library';
     render();
@@ -1401,22 +2682,35 @@ function bindLibraryViewEvents(): void {
   app.querySelector('[data-action="lib-prev"]')?.addEventListener('click', () => {
     if (state.libraryIndex > 0) {
       state.libraryIndex--;
+      const items = getVisiblePanoramas();
+      state.libraryViewId = items[state.libraryIndex]?.id ?? null;
+      if (state.libraryViewId) markPanoramaSeen(state.libraryViewId);
       render();
     }
   });
 
   app.querySelector('[data-action="lib-next"]')?.addEventListener('click', () => {
-    const max = getVisiblePanoramas().length - 1;
+    const items = getVisiblePanoramas();
+    const max = items.length - 1;
     if (state.libraryIndex < max) {
       state.libraryIndex++;
+      state.libraryViewId = items[state.libraryIndex]?.id ?? null;
+      if (state.libraryViewId) markPanoramaSeen(state.libraryViewId);
       render();
     }
   });
 
   app.querySelector('[data-action="lib-delete"]')?.addEventListener('click', () => {
     const id = (app.querySelector('[data-action="lib-delete"]') as HTMLElement).dataset.id;
-    if (id && confirm('Remove this panorama from the library?')) {
-      hidePanorama(id);
+    if (!id) return;
+    void (async () => {
+      const ok = await confirmDialog('Move this panorama to trash?', {
+        title: 'Move to trash',
+        confirmLabel: 'Move to trash',
+        danger: true,
+      });
+      if (!ok) return;
+      trashPanorama(id);
       const remaining = getVisiblePanoramas();
       if (remaining.length === 0) {
         state.screen = 'library';
@@ -1425,7 +2719,7 @@ function bindLibraryViewEvents(): void {
       }
       state.screen = remaining.length === 0 ? 'library' : 'library-view';
       render();
-    }
+    })();
   });
 }
 
@@ -1437,9 +2731,11 @@ function startGame(mode: GameMode): void {
   resetRunStreak();
   state.mode = mode;
   state.inventoryOpen = false;
+  const bonusHearts = takeBonusHeartsForRun();
+  const bonusPoints = takeBonusPointsForRun();
   state.session = {
-    hearts: MAX_HEARTS,
-    score: 0,
+    hearts: MAX_HEARTS + bonusHearts,
+    score: bonusPoints,
     roundNumber: 0,
     usedRoundIds: [],
     lastLostHeart: false,
@@ -1453,14 +2749,19 @@ function startGame(mode: GameMode): void {
 function nextRound(): void {
   if (!state.mode || !state.session) return;
 
-  let round = pickRound(state.mode, state.session.usedRoundIds);
+  const classicRegion = state.mode === 'classic' ? state.classicRegion : 'world';
+  let round = pickRound(state.mode, state.session.usedRoundIds, classicRegion);
   if (!round) {
     state.session.usedRoundIds = [];
-    round = pickRound(state.mode);
+    round = pickRound(state.mode, [], classicRegion);
   }
   if (!round) {
-    alert('No panoramas available for this mode. Check the library or restore hidden scenes.');
-    goHome();
+    const scope =
+      state.mode === 'classic' ? classicRegionLabel(state.classicRegion) : modeLabel(state.mode);
+    void alertDialog(
+      `No panoramas available for ${scope}. Check the library or restore hidden scenes.`,
+      'No scenes',
+    ).then(() => goHome());
     return;
   }
 
@@ -1471,12 +2772,18 @@ function nextRound(): void {
   state.inventoryOpen = false;
   state.round = round;
   state.guess = null;
+  markPanoramaSeen(round.panoramaId);
   state.screen = 'explore';
   render();
 }
 
 function submitGuess(): void {
   if (!state.guess || !state.round || !state.session) return;
+
+  if (state.isCoopRun) {
+    submitCoopGuess();
+    return;
+  }
 
   const score = scoreGuess(state.round, state.guess);
   recordRoundResult(
@@ -1493,13 +2800,256 @@ function submitGuess(): void {
   state.session.lastLostHeart = score.lostHeart;
   if (score.lostHeart) state.session.hearts = Math.max(0, state.session.hearts - 1);
 
+  if (state.session.isDaily) {
+    markDailyCompleted();
+    state.isDailyRun = false;
+  }
+
   state.screen = 'result';
   render();
 }
 
-function goHome(): void {
+function renderCoopWait(): string {
+  const room = getCoopRoom(state.coopRoomId!);
+  if (!room || !state.coopMyRole) return '';
+  return (
+    renderCoopWaitScreen(room, state.coopMyRole, { offlineDemo: !isFirebaseConfigured() }) +
+    renderCoopMatchChatChrome()
+  );
+}
+
+function renderCoopRevealScreen(): string {
+  const room = getCoopRoom(state.coopRoomId!);
+  if (!room) return '';
+  return renderCoopReveal(room) + renderCoopMatchChatChrome();
+}
+
+function renderCoopVoteScreen(): string {
+  const room = getCoopRoom(state.coopRoomId!);
+  if (!room || !state.coopMyRole) return '';
+  const myVote = state.coopMyRole === 'host' ? room.hostVote : room.guestVote;
+  return (
+    renderCoopVote(room, state.coopMyRole, myVote, { offlineDemo: !isFirebaseConfigured() }) +
+    renderCoopMatchChatChrome()
+  );
+}
+
+function renderCoopResultScreen(): string {
+  const room = getCoopRoom(state.coopRoomId!);
+  const round = state.round;
+  if (!room || !round || !room.finalPin || !state.coopMyRole) return '';
+  const score = scoreGuess(round, {
+    lat: room.finalPin.lat,
+    lng: room.finalPin.lng,
+    year: room.finalPin.year,
+  });
+  return (
+    renderCoopResult(room, state.coopMyRole, score.distanceKm, score.points, score.maxPoints) +
+    renderCoopMatchChatChrome()
+  );
+}
+
+function routeCoopScreen(): void {
+  const roomId = state.coopRoomId;
+  if (!roomId) {
+    goHome();
+    return;
+  }
+  const room = getCoopRoom(roomId);
+  if (!room) {
+    goHome();
+    return;
+  }
+  const myRole = state.coopMyRole ?? getMyCoopRole(room, getPlayerId());
+  state.coopMyRole = myRole;
+
+  switch (room.phase) {
+    case 'explore':
+    case 'host_pinned':
+    case 'guest_pinned':
+      state.screen = canISubmitPin(room, myRole) ? 'explore' : 'coop-wait';
+      break;
+    case 'reveal':
+      state.screen = 'coop-reveal';
+      break;
+    case 'vote':
+      state.screen = 'coop-vote';
+      break;
+    case 'result':
+      state.screen = 'coop-result';
+      break;
+    default:
+      goHome();
+      return;
+  }
+  render();
+}
+
+function stopCoopFirestoreListener(): void {
+  coopRoomUnsub?.();
+  coopRoomUnsub = null;
+}
+
+function startCoopFirestoreListener(roomId: string): void {
+  stopCoopFirestoreListener();
+  const unsub = subscribeCoopRoom(roomId, () => {
+    if (state.isCoopRun && state.coopRoomId === roomId) routeCoopScreen();
+    else if (state.screen === 'home') render();
+    else if (state.socialOpen) patchHomeOverlays();
+  });
+  if (unsub) coopRoomUnsub = unsub;
+}
+
+async function acceptAndJoinCoopInvite(inviteId: string): Promise<void> {
+  const remoteInvite = await pullCoopInviteFromFirestore(inviteId);
+  if (remoteInvite) applyRemoteCoopInvite(remoteInvite);
+
+  const invite = remoteInvite ?? loadCoopInvitesLocal().find((i) => i.id === inviteId);
+  if (!invite) {
+    showSocialToast('Invite not found.');
+    return;
+  }
+
+  const remoteRoom = await pullCoopRoomFromFirestore(invite.roomId);
+  if (remoteRoom) applyRemoteCoopRoom(remoteRoom);
+
+  acceptCoopInvite(inviteId);
+  setSocialOpen(false);
+  joinCoopAsGuest(invite.roomId);
+  void syncSocialFromCloud();
+  showSocialToast('Joined Co-op — good luck!');
+}
+
+function loadCoopInvitesLocal(): import('./data/coop').CoopInvite[] {
+  try {
+    const raw = localStorage.getItem('chronopin-coop-invites');
+    return raw ? (JSON.parse(raw) as import('./data/coop').CoopInvite[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function joinCoopAsGuest(roomId: string): void {
+  const room = getCoopRoom(roomId);
+  if (!room) return;
+  const round = getCoopRound(room);
+  if (!round) return;
+
+  closeHomeOverlays();
+  setActiveCoopRoomId(roomId);
   destroyPanorama();
   destroyMap();
+  state.isCoopRun = true;
+  state.coopRoomId = roomId;
+  state.coopMyRole = 'guest';
+  state.playType = 'multiplayer';
+  state.mode = room.gameMode;
+  state.round = round;
+  state.guess = null;
+  state.session = {
+    hearts: MAX_HEARTS,
+    score: 0,
+    roundNumber: 1,
+    usedRoundIds: [round.id],
+    lastLostHeart: false,
+    lastRoundPoints: 0,
+    usedItemsThisRound: [],
+    activeHint: null,
+  };
+  markPanoramaSeen(round.panoramaId);
+  startCoopFirestoreListener(roomId);
+  startMatchChatListener(roomId);
+  routeCoopScreen();
+}
+
+function startCoopGame(roomId: string): void {
+  const room = getCoopRoom(roomId);
+  if (!room) return;
+  const round = getCoopRound(room);
+  if (!round) return;
+
+  closeHomeOverlays();
+  startCoopRoom(roomId);
+  destroyPanorama();
+  destroyMap();
+  state.isCoopRun = true;
+  state.coopRoomId = roomId;
+  state.coopMyRole = 'host';
+  state.playType = 'multiplayer';
+  state.mode = room.gameMode;
+  state.round = round;
+  state.guess = null;
+  state.session = {
+    hearts: MAX_HEARTS,
+    score: 0,
+    roundNumber: 1,
+    usedRoundIds: [round.id],
+    lastLostHeart: false,
+    lastRoundPoints: 0,
+    usedItemsThisRound: [],
+    activeHint: null,
+  };
+  markPanoramaSeen(round.panoramaId);
+  startCoopFirestoreListener(roomId);
+  startMatchChatListener(roomId);
+  routeCoopScreen();
+}
+
+function submitCoopGuess(): void {
+  if (!state.guess || !state.round || !state.coopRoomId || !state.coopMyRole) return;
+  if (!Number.isFinite(state.guess.lat) || !Number.isFinite(state.guess.lng)) return;
+  const room = getCoopRoom(state.coopRoomId);
+  if (!room) return;
+
+  const pin: CoopPin = {
+    lat: state.guess.lat,
+    lng: state.guess.lng,
+    year: state.guess.year,
+    label: state.coopMyRole === 'host' ? room.hostName : room.guestName,
+    at: Date.now(),
+  };
+  submitCoopPin(state.coopRoomId, state.coopMyRole, pin);
+  routeCoopScreen();
+}
+
+function sendCoopInviteFromSetup(): void {
+  const profile = getProfile();
+  if (!profile || !state.coopSetupFriendId) return;
+  const friend = getFriendById(state.coopSetupFriendId);
+  if (!friend) return;
+
+  const invite = createCoopInvite(
+    getPlayerId(),
+    profile.name,
+    friend.id,
+    friend.name,
+    state.coopSyncMode,
+    state.coopGameMode,
+  );
+  if (!invite) {
+    showSocialToast('No scenes available for that mode.');
+    return;
+  }
+
+  setCoopSetupOpen(false);
+  state.socialOpen = true;
+  state.socialTab = 'friends';
+  state.socialView = 'friend';
+  state.socialSelectedFriendId = friend.id;
+  startCoopFirestoreListener(invite.roomId);
+  showSocialToast(`Invite sent to ${friend.name}!`);
+  patchHomeOverlays();
+}
+
+function goHome(): void {
+  stopCoopFirestoreListener();
+  stopMatchChatListener();
+  if (state.coopRoomId && state.screen === 'coop-result') {
+    finishCoopRoom(state.coopRoomId);
+  } else if (state.isCoopRun && state.coopRoomId) {
+    leaveCoopRunLocally();
+  }
+  clearSocialOnlineTimer();
   state = {
     screen: hasProfile() ? 'home' : 'onboarding',
     playType: state.playType,
@@ -1518,8 +3068,25 @@ function goHome(): void {
     socialView: 'list',
     socialSelectedFriendId: null,
     socialMessageDraft: '',
+    socialAddNameDraft: '',
     socialToast: null,
     creditsOpen: false,
+    classicSetupOpen: false,
+    classicRegion: state.classicRegion,
+    isDailyRun: false,
+    dailyWheelOpen: false,
+    dailyWheelResult: null,
+    isCoopRun: false,
+    coopRoomId: null,
+    coopMyRole: null,
+    coopSetupOpen: false,
+    coopSetupFriendId: null,
+    coopSyncMode: state.coopSyncMode,
+    coopGameMode: state.coopGameMode,
+    socialCloudSearch: [],
+    matchChatOpen: false,
+    matchChatDraft: '',
+    matchChatUnread: 0,
   };
   scoreSavedForSession = false;
   gameStatsRecorded = false;
@@ -1529,7 +3096,9 @@ function goHome(): void {
 function getActivePanoSource(): { panorama: string; panoConfig?: Round['panoConfig'] } {
   if (state.screen === 'library-view') {
     const items = getVisiblePanoramas();
-    const item = items[state.libraryIndex];
+    const idx = resolveLibraryIndex();
+    const item = items[idx];
+    if (!item) return { panorama: '' };
     return { panorama: panoramaUrl(item), panoConfig: item.panoConfig };
   }
   const round = state.round!;
@@ -1538,6 +3107,7 @@ function getActivePanoSource(): { panorama: string; panoConfig?: Round['panoConf
 
 function initPanorama(): void {
   const src = getActivePanoSource();
+  if (!src.panorama) return;
   const token = ++panoInitToken;
   destroyPanorama();
 
@@ -1668,6 +3238,78 @@ function initResultMap(): void {
   });
 }
 
+function initCoopRevealMap(): void {
+  const room = state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
+  if (!room?.hostPin || !room.guestPin) return;
+  initCoopDualPinMap('coop-reveal-map', room.hostPin, room.guestPin, room.hostName, room.guestName);
+}
+
+function initCoopVoteMap(): void {
+  const room = state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
+  if (!room?.hostPin || !room.guestPin) return;
+  initCoopDualPinMap('coop-vote-map', room.hostPin, room.guestPin, room.hostName, room.guestName);
+}
+
+function initCoopResultMap(): void {
+  const room = state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
+  const round = state.round;
+  if (!room?.finalPin || !round) return;
+  destroyMap();
+  const bounds = new maplibregl.LngLatBounds();
+  bounds.extend([room.finalPin.lng, room.finalPin.lat]);
+  bounds.extend([round.answer.lng, round.answer.lat]);
+  map = new maplibregl.Map({
+    container: 'coop-result-map',
+    style: MAP_STYLE,
+    bounds,
+    fitBoundsOptions: { padding: 60, maxZoom: 8 },
+    attributionControl: { compact: true },
+  });
+  map.on('load', () => {
+    if (!map || !room.finalPin) return;
+    addCoopMapPin(map, room.finalPin.lng, room.finalPin.lat, 'Team', 'map-pin-guess');
+    addCoopMapPin(map, round.answer.lng, round.answer.lat, '✓', 'map-pin-answer');
+  });
+}
+
+function initCoopDualPinMap(
+  containerId: string,
+  hostPin: CoopPin,
+  guestPin: CoopPin,
+  hostName: string,
+  guestName: string,
+): void {
+  destroyMap();
+  const bounds = new maplibregl.LngLatBounds();
+  bounds.extend([hostPin.lng, hostPin.lat]);
+  bounds.extend([guestPin.lng, guestPin.lat]);
+  map = new maplibregl.Map({
+    container: containerId,
+    style: MAP_STYLE,
+    bounds,
+    fitBoundsOptions: { padding: 60, maxZoom: 6 },
+    attributionControl: { compact: true },
+  });
+  map.on('load', () => {
+    if (!map) return;
+    addCoopMapPin(map, hostPin.lng, hostPin.lat, hostName.slice(0, 1), 'map-pin-host');
+    addCoopMapPin(map, guestPin.lng, guestPin.lat, guestName.slice(0, 1), 'map-pin-guest');
+  });
+}
+
+function addCoopMapPin(
+  targetMap: maplibregl.Map,
+  lng: number,
+  lat: number,
+  label: string,
+  className: string,
+): void {
+  const el = document.createElement('div');
+  el.className = `map-pin ${className}`;
+  el.textContent = label;
+  new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([lng, lat]).addTo(targetMap);
+}
+
 function destroyPanorama(): void {
   panoViewer?.destroy();
   panoViewer = null;
@@ -1678,10 +3320,80 @@ function destroyMap(): void {
   guessMarker = null;
   answerMarker?.remove();
   answerMarker = null;
+  libraryMarkers.forEach((m) => m.remove());
+  libraryMarkers = [];
   map?.remove();
   map = null;
 }
 
+function syncLibraryMapPins(): void {
+  if (!map || state.screen !== 'library-map') return;
+  libraryMarkers.forEach((m) => m.remove());
+  libraryMarkers = [];
+  const items = getLibraryMapPanoramas();
+  for (const p of items) {
+    const el = document.createElement('div');
+    el.className = 'library-map-pin';
+    el.title = p.title;
+    libraryMarkers.push(
+      new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([p.lng, p.lat])
+        .addTo(map),
+    );
+  }
+  if (items.length > 0) {
+    const bounds = new maplibregl.LngLatBounds();
+    for (const p of items) bounds.extend([p.lng, p.lat]);
+    map.fitBounds(bounds, { padding: 56, maxZoom: 8, duration: 0 });
+  }
+}
+
+function initLibraryMap(): void {
+  destroyMap();
+  const token = ++libraryMapInitToken;
+
+  map = new maplibregl.Map({
+    container: 'library-map',
+    style: MAP_STYLE,
+    center: [10, 25],
+    zoom: 1.2,
+    attributionControl: { compact: true },
+  });
+
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+  map.on('load', () => {
+    if (token !== libraryMapInitToken || state.screen !== 'library-map' || !map) return;
+    syncLibraryMapPins();
+    map.resize();
+  });
+}
+
 bindInventoryEventsOnce();
+bindMatchChatEventsOnce();
 bindSocialEventsOnce();
-render();
+bindDailyEventsOnce();
+
+async function bootstrap(): Promise<void> {
+  if (isFirebaseConfigured()) {
+    try {
+      await ensureFirebaseAuth();
+      if (hasProfile()) {
+        await syncLocalProfileWithFirebase(getProfile(), (merged) => {
+          persistProfile(merged);
+          state.avatarConfig = normalizeAvatarConfig(merged.avatarConfig);
+        });
+        await syncSocialFromCloud();
+        startCloudCoopInviteListener(() => {
+          if (state.screen === 'home') render();
+          else if (state.socialOpen) patchHomeOverlays();
+        });
+      }
+    } catch (err) {
+      console.warn('[ChronoPin] Firebase init skipped:', err);
+    }
+  }
+  render();
+}
+
+void bootstrap();

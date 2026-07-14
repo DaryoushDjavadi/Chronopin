@@ -41,4 +41,40 @@ CC-licensed equirectangular panoramas from Wikimedia Commons. Attribution shown 
 | `korea-saemangeum.jpg` | Saemangeum coast, South Korea | CC BY-SA · Wikimedia Commons |
 | `spain-galicia-pena.jpg` | Pena Furada, Galicia, Spain | CC BY-SA · Wikimedia Commons |
 
+## Additional import (July 2026)
+
+| File | Location | License |
+|---|---|---|
+| `london-brompton.jpg` | Brompton Oratory, London, UK | CC BY-SA 3.0 · Diliff |
+| `london-st-barnabas.jpg` | St Barnabas Church, London, UK | CC BY-SA 3.0 · Diliff |
+| `france-laon-cathedral.jpg` | Laon Cathedral, France | CC BY-SA 3.0 · Diliff |
+| `france-soissons-cathedral.jpg` | Soissons Cathedral, France | CC BY-SA 3.0 · Diliff |
+| `auckland-skytower.jpg` | Sky Tower, Auckland, New Zealand | CC BY-SA · Wikimedia Commons |
+| `toronto-king-sherbourne.jpg` | King & Sherbourne, Toronto, Canada | CC BY-SA · Wikimedia Commons |
+
 Scaled via Wikimedia `Special:FilePath?width=1536` (~150–700 KB each).
+
+## Panoramax crowdsourced (July 2026)
+
+Street-level imagery from [Panoramax](https://panoramax.xyz/) (CC BY-SA 4.0). Marked **new** + **panoramax** in the library.
+
+| File | Location | License |
+|---|---|---|
+| `paris-panoramax.jpg` | Paris, France | CC BY-SA 4.0 · Panoramax contributors |
+| `london-panoramax.jpg` | London, UK | CC BY-SA 4.0 · Panoramax contributors |
+| `berlin-panoramax.jpg` | Berlin, Germany | CC BY-SA 4.0 · Panoramax contributors |
+| `tokyo-panoramax.jpg` | Tokyo, Japan | CC BY-SA 4.0 · Panoramax contributors |
+| `nyc-panoramax.jpg` | New York, USA | CC BY-SA 4.0 · Panoramax contributors |
+| `sydney-panoramax.jpg` | Sydney, Australia | CC BY-SA 4.0 · Panoramax contributors |
+| `barcelona-panoramax.jpg` | Barcelona, Spain | CC BY-SA 4.0 · Panoramax contributors |
+| `cape-town-panoramax.jpg` | Cape Town, South Africa | CC BY-SA 4.0 · Panoramax contributors |
+| `mumbai-panoramax.jpg` | Mumbai, India | CC BY-SA 4.0 · Panoramax contributors |
+
+Re-import: `npm run import:panos -- --source panoramax`
+
+## Mapillary / KartaView (import script)
+
+Use `npm run import:panos` with optional `--source mapillary|kartaview|all`.
+
+- **Mapillary** needs `MAPILLARY_ACCESS_TOKEN` in `.env` (see `.env.example`).
+- **KartaView** API geo-search is restricted; the script scans known sequences for 360° SPHERE photos.

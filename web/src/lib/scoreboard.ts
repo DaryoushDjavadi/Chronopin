@@ -1,6 +1,7 @@
 import type { AvatarConfig } from '../data/lpc-catalog';
 import { normalizeAvatarConfig } from '../data/lpc-catalog';
 import { getProfile } from './profile';
+import { safeStorageSet } from './storage';
 import type { GameMode } from '../types';
 
 export interface ScoreboardEntry {
@@ -41,7 +42,7 @@ function loadEntries(): ScoreboardEntry[] {
 }
 
 function saveEntries(entries: ScoreboardEntry[]): void {
-  localStorage.setItem(SCOREBOARD_KEY, JSON.stringify(entries.slice(0, MAX_ENTRIES)));
+  safeStorageSet(SCOREBOARD_KEY, JSON.stringify(entries.slice(0, MAX_ENTRIES)));
 }
 
 export function getScoreboard(filterMode?: GameMode | 'all'): ScoreboardEntry[] {
@@ -78,7 +79,7 @@ export function clearScoreboard(): void {
 
 export function formatScoreDate(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleDateString('de-DE', {
+  return d.toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
     hour: '2-digit',

@@ -1,5 +1,6 @@
 import { getVisiblePanoramas, panoramaUrl } from '../lib/library';
-import type { GameMode, PanoramaAsset, Round } from '../types';
+import { filterPanoramasForClassicRegion } from '../lib/classic-regions';
+import type { ClassicRegionFilter, GameMode, PanoramaAsset, Round } from '../types';
 
 function assetToRound(asset: PanoramaAsset, mode: GameMode): Round {
   const label = `${asset.title}, ${asset.region.split(',')[0]}`;
@@ -35,19 +36,30 @@ function assetToRound(asset: PanoramaAsset, mode: GameMode): Round {
   };
 }
 
-export function getRoundPool(mode: GameMode): Round[] {
-  return getVisiblePanoramas()
-    .filter((p) => {
-      if (mode === 'future') return p.modes.includes('classic') || p.modes.includes('future');
-      return p.modes.includes(mode);
-    })
-    .map((p) => assetToRound(p, mode));
+export function getRoundPool(mode: GameMode, classicRegion: ClassicRegionFilter = 'world'): Round[] {
+  let panos = getVisiblePanoramas().filter((p) => {
+    if (mode === 'future') return p.modes.includes('classic') || p.modes.includes('future');
+    return p.modes.includes(mode);
+  });
+  if (mode === 'classic' && classicRegion !== 'world') {
+    panos = filterPanoramasForClassicRegion(panos, classicRegion);
+  }
+  return panos.map((p) => assetToRound(p, mode));
 }
 
-export function pickRound(mode: GameMode, excludeIds: string[] = []): Round | null {
-  const pool = getRoundPool(mode).filter((r) => !excludeIds.includes(r.id));
+export function pickRound(
+  mode: GameMode,
+  excludeIds: string[] = [],
+  classicRegion: ClassicRegionFilter = 'world',
+): Round | null {
+  const pool = getRoundPool(mode, classicRegion).filter((r) => !excludeIds.includes(r.id));
   if (pool.length === 0) return null;
   return pool[Math.floor(Math.random() * pool.length)]!;
+}
+
+export function getRoundById(roundId: string, mode: GameMode): Round | null {
+  const pool = getRoundPool(mode);
+  return pool.find((r) => r.id === roundId) ?? null;
 }
 
 export function modeLabel(mode: GameMode): string {

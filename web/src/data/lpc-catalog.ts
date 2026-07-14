@@ -1,5 +1,7 @@
 /** Universal LPC sprites bundled under /avatar/lpc — CC-BY-SA / OGA-BY (see LICENSE.md). */
 
+import { assetUrl } from '../lib/asset-url';
+
 export type BodyType = 'male' | 'female';
 
 export interface AvatarConfig {
@@ -204,7 +206,7 @@ export const AVATAR_CATEGORIES: Array<{ id: AvatarCategory; label: string }> = [
   { id: 'shoes', label: 'Shoes' },
 ];
 
-const LPC_BASE = '/avatar/lpc';
+const LPC_BASE = assetUrl('/avatar/lpc');
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 export function isHexColor(value: string): boolean {

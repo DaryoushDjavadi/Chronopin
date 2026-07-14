@@ -1,0 +1,103 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isCoopParticipant(data) {
+      return signedIn()
+        && (data.hostPlayerId == request.auth.uid
+            || data.guestUid == request.auth.uid
+            || data.guestFriendId == request.auth.uid);
+    }
+
+    function isInviteParticipant(data) {
+      return signedIn()
+        && (data.fromPlayerId == request.auth.uid
+            || data.toUid == request.auth.uid
+            || data.toFriendId == request.auth.uid);
+    }
+
+    // Player profiles (search + avatar)
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update: if isOwner(userId);
+      allow delete: if false;
+    }
+
+    // Unique login names → Firebase uid
+    match /loginNames/{searchName} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Friend requests
+    match /friendRequests/{requestId} {
+      allow read: if signedIn()
+        && (resource.data.fromUid == request.auth.uid
+            || resource.data.toUid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.status == 'pending';
+      allow update: if signedIn()
+        && (resource.data.toUid == request.auth.uid
+            || resource.data.fromUid == request.auth.uid);
+      allow delete: if false;
+    }
+
+    // Accepted friendships (required when accepting a request!)
+    match /friendships/{friendshipId} {
+      allow read: if signedIn()
+        && (resource.data.userA == request.auth.uid
+            || resource.data.userB == request.auth.uid);
+      allow create: if signedIn()
+        && (request.resource.data.userA == request.auth.uid
+            || request.resource.data.userB == request.auth.uid);
+      allow update, delete: if false;
+    }
+
+    // Co-op game rooms (live sync)
+    match /coopRooms/{roomId} {
+      allow read: if isCoopParticipant(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.hostPlayerId == request.auth.uid
+        && request.resource.data.guestUid is string;
+      allow update: if isCoopParticipant(resource.data);
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read, create: if signedIn()
+          && isCoopParticipant(get(/databases/$(database)/documents/coopRooms/$(roomId)).data)
+          && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // Co-op invites
+    match /coopInvites/{inviteId} {
+      allow read: if isInviteParticipant(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.fromPlayerId == request.auth.uid
+        && request.resource.data.toUid is string;
+      allow update: if isInviteParticipant(resource.data);
+      allow delete: if false;
+    }
+
+    // Chat (future)
+    match /chats/{chatId}/messages/{messageId} {
+      allow read, create: if signedIn()
+        && chatId.matches('.*' + request.auth.uid + '.*');
+      allow update, delete: if false;
+    }
+  }
+}

@@ -2,6 +2,16 @@ import type { AvatarCategory, AvatarConfig } from './data/lpc-catalog';
 
 export type GameMode = 'classic' | 'past' | 'future';
 export type PlayType = 'solo' | 'multiplayer';
+export type PanoramaSource = 'wikimedia' | 'mapillary' | 'kartaview' | 'panoramax';
+
+export type ClassicRegionFilter =
+  | 'world'
+  | 'europe'
+  | 'north_america'
+  | 'south_america'
+  | 'asia'
+  | 'africa'
+  | 'oceania';
 export type Screen =
   | 'onboarding'
   | 'home'
@@ -11,8 +21,13 @@ export type Screen =
   | 'gameover'
   | 'library'
   | 'library-view'
+  | 'library-map'
   | 'scoreboard'
-  | 'player-info';
+  | 'player-info'
+  | 'coop-wait'
+  | 'coop-reveal'
+  | 'coop-vote'
+  | 'coop-result';
 
 export interface PanoConfig {
   haov?: number;
@@ -38,6 +53,10 @@ export interface PanoramaAsset {
   isAiGenerated?: boolean;
   /** Show "new" badge in panorama library */
   isNew?: boolean;
+  /** Crowdsourced provider (Wikimedia entries omit this) */
+  source?: PanoramaSource;
+  /** Provider-specific image / sequence id */
+  sourceId?: string;
 }
 
 export interface RoundAnswer {
@@ -76,6 +95,8 @@ export interface GameSession {
   lastRoundPoints: number;
   usedItemsThisRound: string[];
   activeHint: { itemId: string; text: string } | null;
+  /** Daily = single round only */
+  isDaily?: boolean;
 }
 
 export interface AppState {
@@ -96,8 +117,32 @@ export interface AppState {
   socialView: 'list' | 'friend';
   socialSelectedFriendId: string | null;
   socialMessageDraft: string;
+  socialAddNameDraft: string;
   socialToast: string | null;
   creditsOpen: boolean;
+  /** Classic mode: region picker open on home */
+  classicSetupOpen: boolean;
+  /** Active classic region filter for the current run */
+  classicRegion: ClassicRegionFilter;
+  /** Today's daily challenge run */
+  isDailyRun: boolean;
+  /** Reward wheel overlay (home or after daily) */
+  dailyWheelOpen: boolean;
+  dailyWheelResult: string | null;
+  /** Co-op multiplayer run */
+  isCoopRun: boolean;
+  coopRoomId: string | null;
+  coopMyRole: 'host' | 'guest' | null;
+  coopSetupOpen: boolean;
+  coopSetupFriendId: string | null;
+  coopSyncMode: 'live' | 'async';
+  coopGameMode: GameMode;
+  /** Firebase user search results (Add friend tab) */
+  socialCloudSearch: { uid: string; name: string; avatarConfig: import('./data/lpc-catalog').AvatarConfig }[];
+  /** In-match chat panel (co-op) */
+  matchChatOpen: boolean;
+  matchChatDraft: string;
+  matchChatUnread: number;
 }
 
 export interface ScoreResult {
