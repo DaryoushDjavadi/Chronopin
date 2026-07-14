@@ -57,6 +57,8 @@ export interface PanoramaAsset {
   source?: PanoramaSource;
   /** Provider-specific image / sequence id */
   sourceId?: string;
+  /** Load via MapillaryJS at runtime (needs VITE_MAPILLARY_ACCESS_TOKEN) */
+  mapillaryLive?: boolean;
 }
 
 export interface RoundAnswer {
@@ -149,6 +151,24 @@ export interface AppState {
   adminResults: import('./lib/firebase-admin').AdminPlayerRow[];
   adminSelectedUid: string | null;
   adminStatus: string | null;
+  /** Round-start cinematic overlay */
+  roundIntroOpen: boolean;
+  roundIntroRoundId: string | null;
+  /** Shown on result / game over */
+  lastXpAward: XpAwardSnapshot | null;
+  lastRunXpAward: XpAwardSnapshot | null;
+  /** Full-screen level-up celebration */
+  levelUpOpen: boolean;
+  /** Stream 360° from Mapillary API instead of static JPG */
+  useMapillaryLive: boolean;
+  mapillaryImageId: string | null;
+}
+
+export interface XpAwardSnapshot {
+  amount: number;
+  leveledUp: boolean;
+  oldLevel: number;
+  newLevel: number;
 }
 
 export interface ScoreResult {

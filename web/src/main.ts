@@ -59,7 +59,8 @@ import {
   simulatePartnerVote,
   startCoopRoom,
   submitCoopPin,
-  submitCoopVote,
+  confirmCoopTeamVote,
+  setCoopVotePreference,
   type CoopPin,
   type CoopVoteChoice,
 } from './data/coop';
@@ -86,6 +87,23 @@ import {
 } from './lib/daily';
 import { applyWheelReward, pickWeightedSegment, WHEEL_SEGMENTS } from './lib/daily-wheel';
 import { alertDialog, confirmDialog } from './lib/dialog-ui';
+import {
+  awardXpForCoop,
+  awardXpForRound,
+  awardXpForRunEnd,
+  getProgression,
+  levelFromXp,
+  renderLevelBadge,
+  renderXpBar,
+  renderXpGainBanner,
+  xpAwardSnapshot,
+  type XpAwardResult,
+} from './lib/progression';
+import { renderRoundIntroOverlay } from './lib/round-intro-ui';
+import { isMapillaryLiveEnabled, findMapillaryPanoNear } from './lib/mapillary-api';
+import { mountMapillaryViewer, destroyMapillaryViewer } from './lib/mapillary-viewer';
+import { pickMapillaryLiveSpot, MAPILLARY_LIVE_SPOTS } from './data/mapillary-live-spots';
+import { renderLevelUpOverlay } from './lib/level-up-ui';
 import { renderSocialOverlayHtml, renderSocialSearchResultsHtml } from './lib/social-ui';
 import { isAdminPlayer } from './lib/admin';
 import { renderAdminOverlayHtml } from './lib/admin-ui';
@@ -114,6 +132,14 @@ import {
   panoramaUrl,
   renderPanoramaBadges,
 } from './lib/library';
+import {
+  getPanoramaDifficulty,
+  panoramaRatingSaveHint,
+  renderPanoramaDifficultyStars,
+  setPanoramaDifficulty,
+  syncPanoramaRatingsFromCloud,
+  type PanoramaDifficulty,
+} from './lib/pano-ratings';
 import {
   classicRegionLabel,
   getClassicRegionPanoramaCount,
@@ -246,6 +272,13 @@ let state: AppState = {
   adminResults: [] as AdminPlayerRow[],
   adminSelectedUid: null as string | null,
   adminStatus: null as string | null,
+  roundIntroOpen: false,
+  roundIntroRoundId: null,
+  lastXpAward: null,
+  lastRunXpAward: null,
+  levelUpOpen: false,
+  useMapillaryLive: false,
+  mapillaryImageId: null,
 };
 
 let scoreSavedForSession = false;
@@ -262,10 +295,13 @@ let libraryMarkers: maplibregl.Marker[] = [];
 let libraryMapInitToken = 0;
 let matchChatUnsub: (() => void) | null = null;
 let activeCoopRoomUnsub: (() => void) | null = null;
-let coopWaitPollTimer: ReturnType<typeof setInterval> | null = null;
+let coopLivePollTimer: ReturnType<typeof setInterval> | null = null;
 let namePromptBound = false;
 let socialSearchTimer: ReturnType<typeof setTimeout> | null = null;
 let adminSearchTimer: ReturnType<typeof setTimeout> | null = null;
+let coopXpAwardedRoom: string | null = null;
+let roundIntroTimer: ReturnType<typeof setTimeout> | null = null;
+let levelUpTimer: ReturnType<typeof setTimeout> | null = null;
 
 const app = document.getElementById('app')!;
 
@@ -273,6 +309,13 @@ function render(): void {
   destroyPanorama();
   destroyMap();
   app.innerHTML = getScreenHtml(state.screen);
+  const levelUpAward = getActiveLevelUpAward();
+  if (state.levelUpOpen && levelUpAward) {
+    app.insertAdjacentHTML(
+      'beforeend',
+      renderLevelUpOverlay({ open: true, award: levelUpAward }),
+    );
+  }
   bindScreenEvents(state.screen);
   void hydrateAvatarCanvases(app);
   if (state.screen === 'explore' || state.screen === 'guess') bindInventoryEvents();
@@ -286,10 +329,14 @@ function render(): void {
     clearSocialOnlineTimer();
     clearDailyCountdownTimer();
   }
-  if (state.screen === 'explore' || state.screen === 'library-view') initPanorama();
+  if (state.screen === 'explore' || state.screen === 'library-view') {
+    if (!state.roundIntroOpen) void initPanoramaViewer();
+  }
   if (state.screen === 'guess') initGuessMap();
   if (state.screen === 'result') initResultMap();
   if (state.screen === 'library-map') initLibraryMap();
+  if (state.screen === 'explore') bindRoundIntro();
+  if (state.levelUpOpen) bindLevelUp();
   if (isMatchChatScreen()) {
     const log = app.querySelector('[data-match-chat-log]');
     if (log) log.scrollTop = log.scrollHeight;
@@ -397,7 +444,10 @@ function renderHome(): string {
         <div class="hero-profile-row">
           <button class="player-chip" data-action="player-info" aria-label="Player info">
             ${renderAvatar(avatarConfig, 'avatar avatar-lg avatar-idle')}
-            <span class="player-name">${escapeHtml(displayName)}</span>
+            <span class="player-chip-meta">
+              <span class="player-name">${escapeHtml(displayName)}</span>
+              ${renderLevelBadge(levelFromXp(getProgression().xp), true)}
+            </span>
           </button>
           <button class="social-btn icon-btn" data-action="social" aria-label="Friends and social">
             <span class="social-btn-icon" aria-hidden="true">👥</span>
@@ -460,6 +510,24 @@ function renderHome(): string {
               </span>
               <span class="tool-count">${panoCount}</span>
             </button>
+            ${
+              isMapillaryLiveEnabled()
+                ? `<button class="tool-card tool-card-mapillary" data-action="mapillary-live-test">
+              <span class="tool-icon">🌐</span>
+              <span class="tool-info">
+                <strong>Mapillary Live</strong>
+                <span>Stream a real 360° street pano via API (beta test)</span>
+              </span>
+              <span class="tool-badge tool-badge-live">LIVE</span>
+            </button>`
+                : `<button class="tool-card tool-card-disabled" type="button" disabled title="Set VITE_MAPILLARY_ACCESS_TOKEN in web/.env">
+              <span class="tool-icon">🌐</span>
+              <span class="tool-info">
+                <strong>Mapillary Live</strong>
+                <span>Free token needed — mapillary.com/dashboard/developers</span>
+              </span>
+            </button>`
+            }
           </div>
         </div>
 
@@ -637,6 +705,8 @@ function startDailyGame(): void {
   }
   destroyPanorama();
   destroyMap();
+  state.useMapillaryLive = false;
+  state.mapillaryImageId = null;
   scoreSavedForSession = false;
   gameStatsRecorded = false;
   resetRunStreak();
@@ -659,6 +729,7 @@ function startDailyGame(): void {
   state.round = round;
   state.guess = null;
   markPanoramaSeen(round.panoramaId);
+  triggerRoundIntro(round.id);
   state.screen = 'explore';
   render();
 }
@@ -755,6 +826,7 @@ async function startPostLoginCloudSync(backgroundOnly = false): Promise<void> {
     await applyCloudPlayerBonuses(uid).catch(() => undefined);
     await syncSocialFromCloud().catch(() => undefined);
     await syncScoreboardFromCloud().catch(() => undefined);
+    await syncPanoramaRatingsFromCloud().catch(() => undefined);
     startCloudCoopSync(() => {
       if (state.screen === 'home') render();
       else if (state.socialOpen) patchHomeOverlays();
@@ -784,6 +856,11 @@ function renderPlayerInfo(): string {
         <h1>${escapeHtml(profile.name)}</h1>
         <p class="member-since">Playing since ${formatMemberSince(profile.createdAt)}</p>
       </div>
+
+      <section class="stats-panel">
+        <h3>Level &amp; XP</h3>
+        ${renderXpBar(getProgression().xp)}
+      </section>
 
       <section class="stats-panel">
         <h3>Statistics</h3>
@@ -1868,7 +1945,7 @@ function renderExplore(): string {
         <button class="icon-btn" data-action="quit" aria-label="Quit">←</button>
         <div class="top-bar-center">
           <span class="mode-pill mode-${state.mode}">${coopRoom ? 'Co-op' : state.session?.isDaily ? 'Daily' : state.mode === 'classic' && state.classicRegion !== 'world' ? `Classic · ${classicRegionLabel(state.classicRegion)}` : modeLabel(state.mode!)}</span>
-          <span class="round-title">${round.title}</span>
+          <span class="round-title">Round ${state.session?.roundNumber ?? 1}</span>
         </div>
         <div class="top-bar-right">
           ${state.isCoopRun ? '' : renderGameAvatarButton()}
@@ -1880,6 +1957,7 @@ function renderExplore(): string {
       ${state.isCoopRun ? '' : renderGameChrome()}
 
       ${round.isAiGenerated ? '<div class="ai-banner">Speculative / AI-assisted scene</div>' : ''}
+      ${state.useMapillaryLive ? '<div class="mapillary-live-banner">🌐 Mapillary Live — streaming via API</div>' : ''}
 
       <div id="pano" class="pano-container" aria-label="360 panorama — drag to look around"></div>
 
@@ -1889,6 +1967,13 @@ function renderExplore(): string {
         <button class="btn btn-primary btn-lg" data-action="guess">${state.isCoopRun ? 'Drop your hidden pin' : 'Drop your pin'}</button>
       </div>
       ${renderCoopMatchChatChrome()}
+      ${renderRoundIntroOverlay({
+        open: state.roundIntroOpen,
+        mode: state.mode ?? 'classic',
+        roundNumber: state.session?.roundNumber ?? 1,
+        isCoop: Boolean(state.isCoopRun),
+        isDaily: Boolean(state.session?.isDaily),
+      })}
     </div>
   `;
 }
@@ -1988,6 +2073,7 @@ function renderResult(): string {
         <span class="grade-badge">${grade}</span>
         <h2>${Math.round((score.points / score.maxPoints) * 100)}%</h2>
         <p class="score-sub">+${score.points.toLocaleString('en-GB')} pts this round</p>
+        ${renderXpGainBanner(state.lastXpAward)}
         ${
           score.lostHeart
             ? `<p class="heart-lost">♥ Lost a heart — ${score.failReason}</p>`
@@ -2044,6 +2130,7 @@ function renderGameOver(): string {
         <span class="gameover-icon">💔</span>
         <h1>Game Over</h1>
         <p class="gameover-sub">No hearts left after ${rounds} round${rounds === 1 ? '' : 's'}</p>
+        ${renderXpGainBanner(state.lastRunXpAward ?? state.lastXpAward)}
 
         <div class="gameover-stats">
           <div class="stat-card stat-highlight">
@@ -2080,7 +2167,7 @@ function renderLibrary(): string {
         <button class="icon-btn" data-action="home" aria-label="Home">←</button>
         <div>
           <h2>Panorama Library</h2>
-          <p>${items.length} active · ${trashed.length} in trash</p>
+          <p>${items.length} active · ${trashed.length} in trash · tap ★ to rate difficulty${isFirebaseConfigured() ? ' (cloud)' : ''}</p>
         </div>
         <button class="icon-btn library-map-btn" data-action="library-map" aria-label="World map" title="World map">🌍</button>
       </div>
@@ -2101,6 +2188,7 @@ function renderLibrary(): string {
                     <strong>${p.title}${renderPanoramaBadges(p)}</strong>
                     <span>${p.region}</span>
                     <span class="library-tags">${p.modes.join(' · ')}</span>
+                    ${renderPanoramaDifficultyStars(p.id, { interactive: true, compact: true })}
                   </div>
                   <button class="library-delete" data-delete="${p.id}" aria-label="Move ${p.title} to trash" title="Move to trash">🗑</button>
                 </li>`,
@@ -2160,6 +2248,11 @@ function renderLibraryView(): string {
         <button class="btn btn-secondary" data-action="lib-prev" ${idx === 0 ? 'disabled' : ''}>← Prev</button>
         <button class="btn btn-secondary" data-action="lib-delete" data-id="${item.id}">Trash</button>
         <button class="btn btn-secondary" data-action="lib-next" ${idx >= items.length - 1 ? 'disabled' : ''}>Next →</button>
+      </div>
+      <div class="library-view-difficulty">
+        <span class="library-view-difficulty-label">Difficulty</span>
+        ${renderPanoramaDifficultyStars(item.id, { interactive: true })}
+        <p class="hint library-difficulty-hint">${panoramaRatingSaveHint()}</p>
       </div>
       <p class="library-view-attribution">${escapeHtml(item.attribution)} · ${escapeHtml(item.license)}</p>
     </div>
@@ -2498,6 +2591,13 @@ function resetStateForLogin(): void {
     adminResults: [],
     adminSelectedUid: null,
     adminStatus: null,
+    roundIntroOpen: false,
+    roundIntroRoundId: null,
+    lastXpAward: null,
+    lastRunXpAward: null,
+    levelUpOpen: false,
+    useMapillaryLive: false,
+    mapillaryImageId: null,
   };
 }
 
@@ -2764,6 +2864,10 @@ function bindHomeEvents(): void {
     if (profile) state.avatarConfig = normalizeAvatarConfig(profile.avatarConfig);
     navigateFromHome('player-info');
   });
+
+  app.querySelector('[data-action="mapillary-live-test"]')?.addEventListener('click', () => {
+    void startMapillaryLiveRound();
+  });
 }
 
 function bindCoopWaitEvents(): void {
@@ -2796,9 +2900,14 @@ function bindCoopVoteEvents(): void {
     btn.addEventListener('click', () => {
       if (!state.coopRoomId || !state.coopMyRole) return;
       const vote = (btn as HTMLElement).dataset.vote as CoopVoteChoice;
-      submitCoopVote(state.coopRoomId, state.coopMyRole, vote);
+      setCoopVotePreference(state.coopRoomId, state.coopMyRole, vote);
       routeCoopScreen();
     });
+  });
+  app.querySelector('[data-action="coop-confirm-vote"]')?.addEventListener('click', () => {
+    if (!state.coopRoomId) return;
+    confirmCoopTeamVote(state.coopRoomId);
+    routeCoopScreen();
   });
   app.querySelector('[data-action="coop-simulate-vote"]')?.addEventListener('click', () => {
     if (state.coopRoomId) simulatePartnerVote(state.coopRoomId);
@@ -2890,6 +2999,9 @@ function finishRunEarly(): void {
   if (!state.session || !state.mode || gameStatsRecorded) return;
   if (state.session.hearts > 0) {
     recordGameEnd(state.session.score, state.session.roundNumber, false);
+    state.lastRunXpAward = applyXpAward(
+      awardXpForRunEnd(true, state.session.roundNumber),
+    );
     if (!scoreSavedForSession) {
       addScoreboardEntry(state.mode, state.session.score, state.session.roundNumber);
       scoreSavedForSession = true;
@@ -2906,6 +3018,9 @@ function showGameOver(): void {
     }
     if (!gameStatsRecorded) {
       recordGameEnd(state.session.score, state.session.roundNumber, true);
+      state.lastRunXpAward = applyXpAward(
+        awardXpForRunEnd(false, state.session.roundNumber),
+      );
       gameStatsRecorded = true;
     }
   }
@@ -2925,17 +3040,38 @@ function bindGameOverEvents(): void {
   app.querySelector('[data-action="home"]')?.addEventListener('click', goHome);
 }
 
+function bindPanoramaRatingEvents(container: ParentNode = app): void {
+  container.querySelectorAll('[data-pano-rating]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const el = btn as HTMLElement;
+      const id = el.dataset.panoId;
+      const value = Number(el.dataset.panoRating) as PanoramaDifficulty;
+      if (!id || (value !== 1 && value !== 2 && value !== 3)) return;
+      const current = getPanoramaDifficulty(id);
+      setPanoramaDifficulty(id, current === value ? null : value);
+      render();
+    });
+  });
+}
+
 function bindLibraryEvents(): void {
   app.querySelector('[data-action="home"]')?.addEventListener('click', goHome);
+
+  void syncPanoramaRatingsFromCloud().then((changed) => {
+    if (changed && state.screen === 'library') render();
+  });
 
   app.querySelector('[data-action="library-map"]')?.addEventListener('click', () => {
     state.screen = 'library-map';
     render();
   });
 
+  bindPanoramaRatingEvents();
+
   app.querySelectorAll('.library-item:not(.library-item-trash)').forEach((item) => {
     item.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('[data-delete]')) return;
+      if ((e.target as HTMLElement).closest('[data-delete], [data-pano-rating], .pano-difficulty')) return;
       const id = (item as HTMLElement).dataset.id;
       if (id) markPanoramaSeen(id);
       const index = Number((item as HTMLElement).dataset.index);
@@ -2989,6 +3125,12 @@ function bindLibraryViewEvents(): void {
   const item = items[state.libraryIndex];
   if (item) markPanoramaSeen(item.id);
 
+  void syncPanoramaRatingsFromCloud().then((changed) => {
+    if (changed && state.screen === 'library-view') render();
+  });
+
+  bindPanoramaRatingEvents();
+
   app.querySelector('[data-action="library-back"]')?.addEventListener('click', () => {
     state.screen = 'library';
     render();
@@ -3038,9 +3180,100 @@ function bindLibraryViewEvents(): void {
   });
 }
 
+function triggerRoundIntro(roundId: string): void {
+  if (state.roundIntroRoundId === roundId && !state.roundIntroOpen) return;
+  state.roundIntroRoundId = roundId;
+  state.roundIntroOpen = true;
+}
+
+function dismissRoundIntro(): void {
+  if (roundIntroTimer) {
+    clearTimeout(roundIntroTimer);
+    roundIntroTimer = null;
+  }
+  state.roundIntroOpen = false;
+  const overlay = app.querySelector('[data-round-intro]');
+  overlay?.classList.remove('open');
+}
+
+function getActiveLevelUpAward(): import('./types').XpAwardSnapshot | null {
+  if (state.screen === 'gameover' && state.lastRunXpAward?.leveledUp) return state.lastRunXpAward;
+  if (state.lastRunXpAward?.leveledUp) return state.lastRunXpAward;
+  if (state.lastXpAward?.leveledUp) return state.lastXpAward;
+  return null;
+}
+
+function applyXpAward(award: XpAwardResult): import('./types').XpAwardSnapshot {
+  if (award.leveledUp) state.levelUpOpen = true;
+  return xpAwardSnapshot(award);
+}
+
+function dismissLevelUp(): void {
+  if (levelUpTimer) {
+    clearTimeout(levelUpTimer);
+    levelUpTimer = null;
+  }
+  state.levelUpOpen = false;
+  app.querySelector('[data-level-up]')?.remove();
+}
+
+function bindLevelUp(): void {
+  const overlay = app.querySelector('[data-level-up]');
+  if (!overlay) return;
+
+  requestAnimationFrame(() => overlay.classList.add('open'));
+
+  const finish = () => dismissLevelUp();
+
+  overlay.querySelectorAll('[data-action="dismiss-level-up"]').forEach((el) => {
+    el.addEventListener('click', finish);
+  });
+
+  levelUpTimer = setTimeout(finish, 5200);
+}
+
+function bindRoundIntro(): void {
+  if (!state.roundIntroOpen) return;
+  const overlay = app.querySelector('[data-round-intro]');
+  if (!overlay) return;
+
+  requestAnimationFrame(() => overlay.classList.add('open'));
+
+  const finish = () => {
+    dismissRoundIntro();
+    if (state.screen === 'explore') {
+      void hydrateAvatarCanvases(app);
+      void initPanoramaViewer();
+    }
+  };
+
+  overlay.querySelectorAll('[data-action="dismiss-round-intro"]').forEach((el) => {
+    el.addEventListener('click', finish);
+  });
+
+  roundIntroTimer = setTimeout(finish, 2800);
+}
+
+function maybeAwardCoopXp(roomId: string): void {
+  if (coopXpAwardedRoom === roomId) return;
+  const room = getCoopRoom(roomId);
+  const round = state.round;
+  if (!room?.finalPin || !round) return;
+  coopXpAwardedRoom = roomId;
+  const score = scoreGuess(round, {
+    lat: room.finalPin.lat,
+    lng: room.finalPin.lng,
+    year: room.finalPin.year,
+  });
+  state.lastXpAward = applyXpAward(awardXpForCoop(score.points, score.maxPoints));
+}
+
 function startGame(mode: GameMode): void {
   destroyPanorama();
   destroyMap();
+  dismissLevelUp();
+  state.useMapillaryLive = false;
+  state.mapillaryImageId = null;
   scoreSavedForSession = false;
   gameStatsRecorded = false;
   resetRunStreak();
@@ -3061,8 +3294,99 @@ function startGame(mode: GameMode): void {
   nextRound();
 }
 
+async function startMapillaryLiveRound(): Promise<void> {
+  if (!isMapillaryLiveEnabled()) {
+    void alertDialog(
+      'Add VITE_MAPILLARY_ACCESS_TOKEN to web/.env — free client token at mapillary.com/dashboard/developers',
+      'Mapillary Live',
+    );
+    return;
+  }
+  if (!hasProfile()) {
+    promptForName();
+    return;
+  }
+
+  const btn = app.querySelector('[data-action="mapillary-live-test"]') as HTMLButtonElement | null;
+  if (btn) btn.disabled = true;
+
+  const spots = [...MAPILLARY_LIVE_SPOTS].sort(() => Math.random() - 0.5);
+  let hit: Awaited<ReturnType<typeof findMapillaryPanoNear>> = null;
+  let spot = pickMapillaryLiveSpot();
+  let lastError: string | null = null;
+
+  for (const candidate of spots.slice(0, 6)) {
+    try {
+      hit = await findMapillaryPanoNear(candidate.lat, candidate.lng);
+      if (hit) {
+        spot = candidate;
+        break;
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  if (btn) btn.disabled = false;
+
+  if (!hit) {
+    void alertDialog(
+      lastError ??
+        'No 360° Mapillary images found near test cities. Token OK — try again or pick another region.',
+      'Mapillary Live',
+    );
+    return;
+  }
+
+  destroyPanorama();
+  destroyMap();
+  dismissLevelUp();
+  scoreSavedForSession = false;
+  gameStatsRecorded = false;
+  resetRunStreak();
+
+  state.useMapillaryLive = true;
+  state.mapillaryImageId = hit.id;
+  state.mode = 'classic';
+  state.isDailyRun = false;
+  state.isCoopRun = false;
+  state.inventoryOpen = false;
+  state.session = {
+    hearts: MAX_HEARTS,
+    score: 0,
+    roundNumber: 1,
+    usedRoundIds: [`mapillary-live-${hit.id}`],
+    lastLostHeart: false,
+    lastRoundPoints: 0,
+    usedItemsThisRound: [],
+    activeHint: null,
+  };
+  state.round = {
+    id: `mapillary-live-${hit.id}`,
+    panoramaId: `mapillary-${hit.id}`,
+    modes: ['classic'],
+    title: spot.label,
+    panorama: '',
+    answer: {
+      lat: hit.lat,
+      lng: hit.lng,
+      label: `${spot.region} · Mapillary Live`,
+    },
+    context: 'Live 360° street panorama streamed from Mapillary Graph API.',
+    attribution: '© Mapillary contributors',
+    license: 'CC BY-SA',
+  };
+  state.guess = null;
+  triggerRoundIntro(state.round.id);
+  state.screen = 'explore';
+  render();
+}
+
 function nextRound(): void {
   if (!state.mode || !state.session) return;
+  dismissLevelUp();
+  state.lastXpAward = null;
+  state.lastRunXpAward = null;
 
   const classicRegion = state.mode === 'classic' ? state.classicRegion : 'world';
   let round = pickRound(state.mode, state.session.usedRoundIds, classicRegion);
@@ -3088,6 +3412,7 @@ function nextRound(): void {
   state.round = round;
   state.guess = null;
   markPanoramaSeen(round.panoramaId);
+  triggerRoundIntro(round.id);
   state.screen = 'explore';
   render();
 }
@@ -3114,6 +3439,12 @@ function submitGuess(): void {
   state.session.lastRoundPoints = score.points;
   state.session.lastLostHeart = score.lostHeart;
   if (score.lostHeart) state.session.hearts = Math.max(0, state.session.hearts - 1);
+
+  state.lastXpAward = applyXpAward(
+    awardXpForRound(score.points, score.maxPoints, score.lostHeart, {
+      daily: Boolean(state.session.isDaily),
+    }),
+  );
 
   if (state.session.isDaily) {
     markDailyCompleted();
@@ -3159,21 +3490,29 @@ function renderCoopResultScreen(): string {
     year: room.finalPin.year,
   });
   return (
-    renderCoopResult(room, state.coopMyRole, score.distanceKm, score.points, score.maxPoints) +
-    renderCoopMatchChatChrome()
+    renderCoopResult(
+      room,
+      state.coopMyRole,
+      score.distanceKm,
+      score.points,
+      score.maxPoints,
+      renderXpGainBanner(state.lastXpAward),
+    ) + renderCoopMatchChatChrome()
   );
 }
 
-function clearCoopWaitPoll(): void {
-  if (coopWaitPollTimer) {
-    clearInterval(coopWaitPollTimer);
-    coopWaitPollTimer = null;
+function clearCoopLivePoll(): void {
+  if (coopLivePollTimer) {
+    clearInterval(coopLivePollTimer);
+    coopLivePollTimer = null;
   }
 }
 
-function syncCoopWaitPoll(): void {
-  clearCoopWaitPoll();
-  if (!state.isCoopRun || !state.coopRoomId || state.screen !== 'coop-wait') return;
+const COOP_SYNC_SCREENS = new Set(['coop-wait', 'coop-reveal', 'coop-vote']);
+
+function syncCoopLivePoll(): void {
+  clearCoopLivePoll();
+  if (!state.isCoopRun || !state.coopRoomId || !COOP_SYNC_SCREENS.has(state.screen)) return;
 
   const poll = () => {
     if (!state.isCoopRun || !state.coopRoomId) return;
@@ -3184,7 +3523,20 @@ function syncCoopWaitPoll(): void {
   };
 
   poll();
-  coopWaitPollTimer = setInterval(poll, 2500);
+  coopLivePollTimer = setInterval(poll, 1200);
+}
+
+function exitCoopGameEnded(message: string): void {
+  clearCoopLivePoll();
+  stopCoopFirestoreListener();
+  stopMatchChatListener();
+  setActiveCoopRoomId(null);
+  state.isCoopRun = false;
+  state.coopRoomId = null;
+  state.coopMyRole = null;
+  state.screen = 'home';
+  showSocialToast(message);
+  render();
 }
 
 function routeCoopScreen(): void {
@@ -3198,12 +3550,18 @@ function routeCoopScreen(): void {
     goHome();
     return;
   }
+
+  if (room.phase === 'done') {
+    exitCoopGameEnded('This co-op game was ended.');
+    return;
+  }
+
   const myRole = state.coopMyRole ?? getMyCoopRole(room, getPlayerId());
   state.coopMyRole = myRole;
 
-  if (bothCoopPinsPlaced(room) && room.phase !== 'vote' && room.phase !== 'result' && room.phase !== 'done') {
+  if (bothCoopPinsPlaced(room) && room.phase !== 'vote' && room.phase !== 'result') {
     state.screen = 'coop-reveal';
-    clearCoopWaitPoll();
+    clearCoopLivePoll();
     render();
     return;
   }
@@ -3213,6 +3571,7 @@ function routeCoopScreen(): void {
     case 'host_pinned':
     case 'guest_pinned':
       state.screen = canISubmitPin(room, myRole) ? 'explore' : 'coop-wait';
+      if (state.screen === 'explore' && state.round) triggerRoundIntro(state.round.id);
       break;
     case 'reveal':
       state.screen = 'coop-reveal';
@@ -3221,14 +3580,15 @@ function routeCoopScreen(): void {
       state.screen = 'coop-vote';
       break;
     case 'result':
+      maybeAwardCoopXp(roomId);
       state.screen = 'coop-result';
       break;
     default:
       goHome();
       return;
   }
-  if (state.screen === 'coop-wait') syncCoopWaitPoll();
-  else clearCoopWaitPoll();
+  if (COOP_SYNC_SCREENS.has(state.screen)) syncCoopLivePoll();
+  else clearCoopLivePoll();
   render();
 }
 
@@ -3428,7 +3788,8 @@ function sendCoopInviteFromSetup(): void {
 
 function goHome(): void {
   stopCoopFirestoreListener();
-  clearCoopWaitPoll();
+  clearCoopLivePoll();
+  dismissRoundIntro();
   stopMatchChatListener();
   if (state.coopRoomId && state.screen === 'coop-result') {
     finishCoopRoom(state.coopRoomId);
@@ -3478,6 +3839,13 @@ function goHome(): void {
     adminResults: [],
     adminSelectedUid: null,
     adminStatus: null,
+    roundIntroOpen: false,
+    roundIntroRoundId: null,
+    lastXpAward: null,
+    lastRunXpAward: null,
+    levelUpOpen: false,
+    useMapillaryLive: false,
+    mapillaryImageId: null,
   };
   scoreSavedForSession = false;
   gameStatsRecorded = false;
@@ -3522,6 +3890,25 @@ function initPanorama(): void {
       panoViewer = pannellum.viewer('pano', config);
     });
   });
+}
+
+async function initPanoramaViewer(): Promise<void> {
+  if (state.useMapillaryLive && state.mapillaryImageId) {
+    const token = ++panoInitToken;
+    destroyPanorama();
+    try {
+      await mountMapillaryViewer('pano', state.mapillaryImageId);
+    } catch (err) {
+      if (token !== panoInitToken) return;
+      console.error('Mapillary viewer failed:', err);
+      void alertDialog(
+        err instanceof Error ? err.message : 'Could not load Mapillary panorama',
+        'Mapillary Live',
+      );
+    }
+    return;
+  }
+  initPanorama();
 }
 
 function initGuessMap(): void {
@@ -3754,6 +4141,7 @@ function addCoopMapPin(
 function destroyPanorama(): void {
   panoViewer?.destroy();
   panoViewer = null;
+  destroyMapillaryViewer();
 }
 
 function destroyMap(): void {

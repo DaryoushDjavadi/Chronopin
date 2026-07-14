@@ -1,0 +1,588 @@
+[
+  {
+    "id": "paris-panoramax",
+    "filename": "paris-panoramax.jpg",
+    "title": "Paris Street View",
+    "region": "Paris, France",
+    "lat": 48.870218145,
+    "lng": 2.329938291,
+    "modes": [
+      "classic"
+    ],
+    "panoConfig": {
+      "haov": 360,
+      "vaov": 90,
+      "vOffset": 0
+    },
+    "context": "Crowdsourced street-level imagery in Paris via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "80829454-980b-4128-81df-748d8379fa7f",
+    "isNew": true
+  },
+  {
+    "id": "london-panoramax",
+    "filename": "london-panoramax.jpg",
+    "title": "London Street View",
+    "region": "London, United Kingdom",
+    "lat": 51.499744722,
+    "lng": -0.114326503,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in London via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "aaf51c74-b88a-435b-b78f-a004330cc35e",
+    "isNew": true
+  },
+  {
+    "id": "berlin-panoramax",
+    "filename": "berlin-panoramax.jpg",
+    "title": "Berlin Street View",
+    "region": "Berlin, Germany",
+    "lat": 52.5167751,
+    "lng": 13.3860303,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Berlin via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "27939c03-0782-47fe-a85d-60510e86d3ca",
+    "isNew": true
+  },
+  {
+    "id": "tokyo-panoramax",
+    "filename": "tokyo-panoramax.jpg",
+    "title": "Tokyo Street View",
+    "region": "Tokyo, Japan",
+    "lat": 35.6897505,
+    "lng": 139.7056675,
+    "modes": [
+      "classic"
+    ],
+    "panoConfig": {
+      "haov": 360,
+      "vaov": 90,
+      "vOffset": 0
+    },
+    "context": "Crowdsourced street-level imagery in Tokyo via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "7a8c3cbb-0d54-4df9-b8fd-e5e45573cfef",
+    "isNew": true
+  },
+  {
+    "id": "nyc-panoramax",
+    "filename": "nyc-panoramax.jpg",
+    "title": "NYC Street View",
+    "region": "New York, USA",
+    "lat": 40.7726876,
+    "lng": -73.9939976,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in NYC via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "dd48611a-c17d-424e-be1d-8f63a36d423f",
+    "isNew": true
+  },
+  {
+    "id": "sydney-panoramax",
+    "filename": "sydney-panoramax.jpg",
+    "title": "Sydney Street View",
+    "region": "Sydney, Australia",
+    "lat": -33.8678457,
+    "lng": 151.2176427,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Sydney via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "ace7b9f9-28a8-4f26-aeac-2054b39617d8",
+    "isNew": true
+  },
+  {
+    "id": "barcelona-panoramax",
+    "filename": "barcelona-panoramax.jpg",
+    "title": "Barcelona Street View",
+    "region": "Barcelona, Spain",
+    "lat": 41.3855662,
+    "lng": 2.1700479,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Barcelona via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "7d644363-02c0-4042-8ab1-5ffcd9f0f120",
+    "isNew": true
+  },
+  {
+    "id": "cape-town-panoramax",
+    "filename": "cape-town-panoramax.jpg",
+    "title": "Cape Town Street View",
+    "region": "Cape Town, South Africa",
+    "lat": -33.9131381,
+    "lng": 18.4215643,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Cape Town via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "55b5f51d-0cfc-4da3-b05a-fdd76fdaa99a",
+    "isNew": true
+  },
+  {
+    "id": "mumbai-panoramax",
+    "filename": "mumbai-panoramax.jpg",
+    "title": "Mumbai Street View",
+    "region": "Mumbai, India",
+    "lat": 18.9341503,
+    "lng": 72.8336402,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Mumbai via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "40459134-e321-40de-91c2-e9ee6ef8d80d",
+    "isNew": true
+  },
+  {
+    "id": "rome-panoramax",
+    "filename": "rome-panoramax.jpg",
+    "title": "Rome Street View",
+    "region": "Rome, Italy",
+    "lat": 41.898106181,
+    "lng": 12.489081349,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Rome via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "913c3fd8-d9b7-42af-bda8-a432bca914d5",
+    "isNew": true
+  },
+  {
+    "id": "amsterdam-panoramax",
+    "filename": "amsterdam-panoramax.jpg",
+    "title": "Amsterdam Street View",
+    "region": "Amsterdam, Netherlands",
+    "lat": 52.36962,
+    "lng": 4.899969,
+    "modes": [
+      "classic"
+    ],
+    "panoConfig": {
+      "haov": 360,
+      "vaov": 90,
+      "vOffset": 0
+    },
+    "context": "Crowdsourced street-level imagery in Amsterdam via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "01737065-3e80-42a5-a975-1a0caece033c",
+    "isNew": true
+  },
+  {
+    "id": "lisbon-panoramax",
+    "filename": "lisbon-panoramax.jpg",
+    "title": "Lisbon Street View",
+    "region": "Lisbon, Portugal",
+    "lat": 38.711905563,
+    "lng": -9.138207224,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Lisbon via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "a35c6f92-2528-4a9d-8a28-51c04e0d9792",
+    "isNew": true
+  },
+  {
+    "id": "istanbul-panoramax",
+    "filename": "istanbul-panoramax.jpg",
+    "title": "Istanbul Street View",
+    "region": "Istanbul, Turkey",
+    "lat": 41.0145738,
+    "lng": 28.9977569,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Istanbul via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "904e6fda-e6fd-48bf-b4ea-28ae742800da",
+    "isNew": true
+  },
+  {
+    "id": "dubai-panoramax",
+    "filename": "dubai-panoramax.jpg",
+    "title": "Dubai Street View",
+    "region": "Dubai, UAE",
+    "lat": 25.205856,
+    "lng": 55.32663,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Dubai via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "54bf19af-3909-4c95-8406-f209e58d4169",
+    "isNew": true
+  },
+  {
+    "id": "singapore-panoramax",
+    "filename": "singapore-panoramax.jpg",
+    "title": "Singapore Street View",
+    "region": "Singapore",
+    "lat": 1.30395455,
+    "lng": 103.83197415,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Singapore via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "a5f4187d-ab2f-4837-9371-09a057719911",
+    "isNew": true
+  },
+  {
+    "id": "seoul-panoramax",
+    "filename": "seoul-panoramax.jpg",
+    "title": "Seoul Street View",
+    "region": "Seoul, South Korea",
+    "lat": 37.547708,
+    "lng": 127.029697944,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Seoul via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "ad8956b6-6701-4392-bd8f-ad4b7e8b79dc",
+    "isNew": true
+  },
+  {
+    "id": "mexico-city-panoramax",
+    "filename": "mexico-city-panoramax.jpg",
+    "title": "Mexico City Street View",
+    "region": "Mexico City, Mexico",
+    "lat": 19.4348967,
+    "lng": -99.14409,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Mexico City via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "e65529b9-4ec0-49b2-bdbb-57922a549717",
+    "isNew": true
+  },
+  {
+    "id": "buenos-aires-panoramax",
+    "filename": "buenos-aires-panoramax.jpg",
+    "title": "Buenos Aires Street View",
+    "region": "Buenos Aires, Argentina",
+    "lat": -34.6232694,
+    "lng": -58.3874799,
+    "modes": [
+      "classic"
+    ],
+    "panoConfig": {
+      "haov": 360,
+      "vaov": 90,
+      "vOffset": 0
+    },
+    "context": "Crowdsourced street-level imagery in Buenos Aires via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "4981d6ce-2917-425c-a7cf-b39cf51b7fc3",
+    "isNew": true
+  },
+  {
+    "id": "stockholm-panoramax",
+    "filename": "stockholm-panoramax.jpg",
+    "title": "Stockholm Street View",
+    "region": "Stockholm, Sweden",
+    "lat": 59.326113889,
+    "lng": 18.073,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Stockholm via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "83925f34-221c-4195-a2fc-7825d0607fb8",
+    "isNew": true
+  },
+  {
+    "id": "prague-panoramax",
+    "filename": "prague-panoramax.jpg",
+    "title": "Prague Street View",
+    "region": "Prague, Czech Republic",
+    "lat": 50.091994,
+    "lng": 14.4209264,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Prague via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "e8e9ffa0-10e5-4911-9374-fa48d70cb090",
+    "isNew": true
+  },
+  {
+    "id": "montreal-panoramax",
+    "filename": "montreal-panoramax.jpg",
+    "title": "Montreal Street View",
+    "region": "Montreal, Canada",
+    "lat": 45.505833333,
+    "lng": -73.554166667,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Montreal via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "7ac9dd4d-f32c-4661-9fc4-bec3434db09c",
+    "isNew": true
+  },
+  {
+    "id": "los-angeles-panoramax",
+    "filename": "los-angeles-panoramax.jpg",
+    "title": "Los Angeles Street View",
+    "region": "Los Angeles, USA",
+    "lat": 34.0561048,
+    "lng": -118.269863,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Los Angeles via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "4e940aee-a993-44f4-8e80-1ed40168b8a8",
+    "isNew": true
+  },
+  {
+    "id": "san-francisco-panoramax",
+    "filename": "san-francisco-panoramax.jpg",
+    "title": "San Francisco Street View",
+    "region": "San Francisco, USA",
+    "lat": 37.775393705,
+    "lng": -122.419317127,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in San Francisco via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "c8392136-fcec-4e85-913e-4b7486d08885",
+    "isNew": true
+  },
+  {
+    "id": "hong-kong-panoramax",
+    "filename": "hong-kong-panoramax.jpg",
+    "title": "Hong Kong Street View",
+    "region": "Hong Kong",
+    "lat": 22.315336333,
+    "lng": 114.16659275,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Hong Kong via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "ef57aee9-2bd9-477e-b345-386780812194",
+    "isNew": true
+  },
+  {
+    "id": "bangkok-panoramax",
+    "filename": "bangkok-panoramax.jpg",
+    "title": "Bangkok Street View",
+    "region": "Bangkok, Thailand",
+    "lat": 13.779213889,
+    "lng": 100.522858333,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Bangkok via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "5ac16021-4e86-4867-b99e-4a78bab7dce4",
+    "isNew": true
+  },
+  {
+    "id": "nairobi-panoramax",
+    "filename": "nairobi-panoramax.jpg",
+    "title": "Nairobi Street View",
+    "region": "Nairobi, Kenya",
+    "lat": -1.277636111,
+    "lng": 36.818,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Nairobi via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "62bcc83e-dd3e-4e0a-a957-c345fbf9196f",
+    "isNew": true
+  },
+  {
+    "id": "helsinki-panoramax",
+    "filename": "helsinki-panoramax.jpg",
+    "title": "Helsinki Street View",
+    "region": "Helsinki, Finland",
+    "lat": 60.173725,
+    "lng": 24.941755556,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Helsinki via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "49f71ead-62ab-4e1d-a73b-d539283e3bf0",
+    "isNew": true
+  },
+  {
+    "id": "oslo-panoramax",
+    "filename": "oslo-panoramax.jpg",
+    "title": "Oslo Street View",
+    "region": "Oslo, Norway",
+    "lat": 59.914111111,
+    "lng": 10.737844444,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Oslo via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "09f80a1b-088a-4a4f-9fcd-51fb6beba00f",
+    "isNew": true
+  },
+  {
+    "id": "bucharest-panoramax",
+    "filename": "bucharest-panoramax.jpg",
+    "title": "Bucharest Street View",
+    "region": "Bucharest, Romania",
+    "lat": 44.42692348,
+    "lng": 26.09279397,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Bucharest via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "878bcc9e-cdb5-45e3-a595-14a7f5b0bdd6",
+    "isNew": true
+  },
+  {
+    "id": "warsaw-panoramax",
+    "filename": "warsaw-panoramax.jpg",
+    "title": "Warsaw Street View",
+    "region": "Warsaw, Poland",
+    "lat": 52.242511111,
+    "lng": 21.028675,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Warsaw via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "8ce24d02-0499-42c1-a861-02938ba52430",
+    "isNew": true
+  },
+  {
+    "id": "athens-panoramax",
+    "filename": "athens-panoramax.jpg",
+    "title": "Athens Street View",
+    "region": "Athens, Greece",
+    "lat": 37.976026144,
+    "lng": 23.727972133,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Athens via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "88fe4186-a965-4342-abd6-69810ca41730",
+    "isNew": true
+  },
+  {
+    "id": "vienna-panoramax",
+    "filename": "vienna-panoramax.jpg",
+    "title": "Vienna Street View",
+    "region": "Vienna, Austria",
+    "lat": 48.206628,
+    "lng": 16.38432615,
+    "modes": [
+      "classic"
+    ],
+    "context": "Crowdsourced street-level imagery in Vienna via Panoramax.",
+    "attribution": "Panoramax contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "panoramax",
+    "sourceId": "c8bb8203-e5ca-416e-8db1-3b1ee47c06a2",
+    "isNew": true
+  },
+  {
+    "id": "jakarta-kartaview",
+    "filename": "jakarta-kartaview.jpg",
+    "title": "Jakarta Street View",
+    "region": "Jakarta, Indonesia",
+    "lat": -6.209691,
+    "lng": 106.827228,
+    "modes": [
+      "classic"
+    ],
+    "panoConfig": {
+      "haov": 360,
+      "vaov": 90,
+      "vOffset": 0
+    },
+    "context": "Crowdsourced KartaView 360° street panorama in Jakarta.",
+    "attribution": "KartaView / OpenStreetCam contributors",
+    "license": "CC BY-SA 4.0",
+    "source": "kartaview",
+    "sourceId": "1623574457",
+    "isNew": true
+  }
+]

@@ -72,6 +72,29 @@ Street-level imagery from [Panoramax](https://panoramax.xyz/) (CC BY-SA 4.0). Ma
 
 Re-import: `npm run import:panos -- --source panoramax`
 
+## Panoramax expansion (July 2026 — batch 2)
+
+Additional street-level scenes via Panoramax (CC BY-SA 4.0):
+
+| File | Location |
+|---|---|
+| `rome-panoramax.jpg` | Rome, Italy |
+| `amsterdam-panoramax.jpg` | Amsterdam, Netherlands |
+| `lisbon-panoramax.jpg` | Lisbon, Portugal |
+| `istanbul-panoramax.jpg` | Istanbul, Turkey |
+| `mexico-city-panoramax.jpg` | Mexico City, Mexico |
+| `stockholm-panoramax.jpg` | Stockholm, Sweden |
+| `prague-panoramax.jpg` | Prague, Czech Republic |
+| `montreal-panoramax.jpg` | Montreal, Canada |
+| `san-francisco-panoramax.jpg` | San Francisco, USA |
+| `hong-kong-panoramax.jpg` | Hong Kong |
+| `bangkok-panoramax.jpg` | Bangkok, Thailand |
+| `nairobi-panoramax.jpg` | Nairobi, Kenya |
+| `helsinki-panoramax.jpg` | Helsinki, Finland |
+| `oslo-panoramax.jpg` | Oslo, Norway |
+
+Total library: **58 active scenes** (Wikimedia landmarks + Panoramax street views worldwide).
+
 ## Mapillary / KartaView (import script)
 
 Use `npm run import:panos` with optional `--source mapillary|kartaview|all`.

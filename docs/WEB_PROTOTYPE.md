@@ -1,6 +1,6 @@
 # ChronoPin — Web Prototype (technical)
 
-Playable browser prototype under [`web/`](../web/). Validates core loop + Firebase multiplayer before Expo/React Native.
+Playable browser prototype under [`web/`](../web/). Validates core loop, Firebase multiplayer, progression meta, and deploy path before Expo/React Native.
 
 **Run:** `cd web && npm install && npm run dev` → **http://localhost:5173**
 
@@ -16,19 +16,21 @@ Playable browser prototype under [`web/`](../web/). Validates core loop + Fireba
 
 | Collection | Purpose | Sync |
 |---|---|---|
-| `users/{uid}` | Profile (name, avatar, searchName) | Boot + profile save |
+| `users/{uid}` | Profile (name, avatar, searchName, admin bonuses) | Boot + profile save |
 | `loginNames/{searchName}` | Unique display name → uid | Login + profile save |
 | `friendRequests/{id}` | Pending friend requests | Social sync |
 | `friendships/{id}` | Accepted pairs (userA, userB) | On accept |
-| `coopRooms/{roomId}` | Full `CoopRoom` document | Every update + `onSnapshot` |
+| `coopRooms/{roomId}` | Full `CoopRoom` document | Patch writes + `onSnapshot` |
 | `coopRooms/{roomId}/messages/{id}` | In-match chat | Realtime listener |
 | `coopInvites/{inviteId}` | Co-op game invites | Create/update + incoming listener |
+| `scoreboard/{searchName_mode}` | Global best scores per player/mode | On run end |
+| `panoramaRatings/{panoId}` | Shared difficulty rating (1–3★) per library scene | On rate + library open + login |
 
 **Auth:** Anonymous sign-in at bootstrap. `playerId` = Firebase `uid`.
 
 **Deploy:** [`firestore.rules`](../firestore.rules) + [`firestore.indexes.json`](../firestore.indexes.json) via `firebase deploy --only firestore`.
 
-Without `.env`, app runs **offline** using `localStorage` only.
+Without `.env`, app runs **offline** using `localStorage` only (demo friends, local co-op, no cloud scoreboard).
 
 ---
 
@@ -43,6 +45,7 @@ Without `.env`, app runs **offline** using `localStorage` only.
 | Persistence | `localStorage` + Firebase Auth/Firestore |
 | Avatars | Universal LPC sprite subset (canvas compositor) |
 | Dialogs | In-app confirm/alert (`lib/dialog-ui.ts`) |
+| Progression | Local XP/level (`lib/progression.ts`) |
 
 ---
 
@@ -56,19 +59,23 @@ Without `.env`, app runs **offline** using `localStorage` only.
 (factory reset) onboarding
 ```
 
-Name login: `lib/login.ts` — creates or restores player via `loginNames` + `users`.
+Name login: `lib/login.ts` — creates or restores player via `loginNames` + `users`. Profile saves locally first; cloud sync runs in the background (no UI hang on slow Firebase).
 
 ### Solo
 
 ```
-home → explore → guess → result → (next round | gameover)
+home → [round intro overlay] → explore → guess → result (+ XP banner) → (next round | gameover)
 ```
+
+Each new round shows a **round intro overlay** (~2.8 s or tap to dismiss) before the panorama loads.
 
 ### Daily
 
 ```
-home → daily card → explore → guess → result → reward wheel → stash
+home → daily card → [round intro] → explore → guess → result → reward wheel → stash
 ```
+
+Daily rounds award bonus XP (+40 on top of round XP).
 
 ### Co-op Decide (Firebase)
 
@@ -76,10 +83,38 @@ home → daily card → explore → guess → result → reward wheel → stash
 home → pick friend → coop setup → invite
   → guest accept (home banner)
   → host start (home banner)
-  → explore → guess (hidden pin) → coop-wait → coop-reveal → coop-vote → coop-result
+  → [round intro] → explore → guess (hidden pin) → coop-wait → coop-reveal → coop-vote → coop-result (+ XP)
 ```
 
 Match chat available on all co-op screens (`lib/match-chat-ui.ts`).
+
+**Vote flow (v2):** Each player picks host pin / guest pin / midpoint as a **preference** (`setCoopVotePreference`). Both see the partner's pick live. When both agree, **Submit team guess** (`confirmCoopTeamVote`) locks the final pin. Preferences can be changed until submit.
+
+---
+
+## Progression (XP & level)
+
+Local-only meta — stored in `chronopin-progression` (`xp`, `lifetimeXp`). Not synced to Firestore yet.
+
+| Source | XP (approx.) |
+|---|---|
+| Round result | 12–100 by accuracy ratio |
+| Heart kept | +20 bonus |
+| Daily round | +40 bonus |
+| Run won | 60 + 8 × rounds played |
+| Run lost | 15 + 3 × rounds played |
+| Co-op result | 20–100 by team score ratio |
+
+**Levels:** Threshold table up to Lv 10, then +600 XP per level. Titles: Rookie → Explorer → Scout → Pathfinder → … → Chrono Master.
+
+**UI:**
+- Compact **Lv N** badge on home player chip
+- **Level & XP** panel in Player info (bar, title, perk placeholders)
+- **+XP banner** on result / game over / co-op result; highlights level-up
+
+**Perks:** `getLevelPerks()` returns placeholder unlocks (extra heart, avatar items, daily boost) — mechanics not wired yet.
+
+**Module:** `web/src/lib/progression.ts` · overlay: `web/src/lib/round-intro-ui.ts`
 
 ---
 
@@ -88,13 +123,14 @@ Match chat available on all co-op screens (`lib/match-chat-ui.ts`).
 | Screen | Notes |
 |---|---|
 | Onboarding / Login | Name entry only (`renderOnboarding`) |
-| Home | Solo/Multi tabs, daily, social, co-op banners |
-| Explore / Guess | Solo or co-op (`isCoopRun`) |
-| Co-op Wait / Reveal / Vote / Result | Multiplayer phases |
+| Home | Solo/Multi tabs, daily, social, co-op banners, level badge on player chip |
+| Explore / Guess | Solo or co-op (`isCoopRun`); round intro overlay on explore |
+| Result / Game over | XP gain banner |
+| Co-op Wait / Reveal / Vote / Result | Multiplayer phases; live polling on wait/reveal/vote |
 | Library / Library View / Library Map | Trash excluded from map pins |
-| Player Info | Stats, avatar edit, stash, **Factory Reset** |
+| Player Info | Stats, avatar edit, stash, **Level & XP**, **Factory Reset** |
 
-**Overlays:** Social, Co-op setup, Credits, Classic region, Daily wheel, Inventory (solo), Match chat (co-op).
+**Overlays:** Social, Co-op setup, Credits, Classic region, Daily wheel, Inventory (solo), Match chat (co-op), Admin (⚙), Round intro.
 
 ---
 
@@ -102,17 +138,31 @@ Match chat available on all co-op screens (`lib/match-chat-ui.ts`).
 
 ```
 web/src/
-├── main.ts
-├── data/coop.ts, match-chat.ts, social.ts, user-directory.ts
+├── main.ts                    # App shell, routing, XP awards, round intro lifecycle
+├── types.ts
+├── data/
+│   ├── coop.ts                # Rooms, phases, vote prefs, abandonCoopGame
+│   ├── match-chat.ts, social.ts, user-directory.ts
+│   ├── avatar-credits.ts      # Attribution strings for credits overlay
+│   └── rounds.ts, lpc-catalog.ts
 ├── lib/
 │   ├── login.ts, app-reset.ts
+│   ├── progression.ts         # XP, levels, badges, perk placeholders
+│   ├── round-intro-ui.ts      # Animated round-start overlay
+│   ├── credits-ui.ts          # Attributes / Credits overlay
+│   ├── admin.ts, admin-ui.ts, firebase-admin.ts
 │   ├── firebase.ts, firebase-auth.ts, firebase-profile.ts
 │   ├── firebase-friends.ts, firebase-coop.ts, firebase-social.ts
-│   ├── firebase-match-chat.ts
+│   ├── firebase-match-chat.ts, firebase-scoreboard.ts, firebase-pano-ratings.ts
 │   ├── coop-ui.ts, match-chat-ui.ts, social-ui.ts
-│   └── daily.ts, library.ts, profile.ts, …
-web/public/.htaccess          # SPA rewrite (Strato)
-web/scripts/import-external-panos.mjs
+│   ├── avatar-compose.ts, avatar-editor-ui.ts
+│   ├── daily.ts, library.ts, profile.ts, scoreboard.ts, stats.ts, …
+│   └── dialog-ui.ts, asset-url.ts, storage.ts
+web/public/.htaccess           # SPA rewrite (Strato, RewriteBase /Chrono/)
+web/scripts/
+├── deploy-strato.sh
+├── import-external-panos.mjs
+└── coop-multiplayer-e2e.mjs   # Playwright 2-player smoke test
 ```
 
 ---
@@ -122,13 +172,17 @@ web/scripts/import-external-panos.mjs
 | Key | Content |
 |---|---|
 | `chronopin-profile` | Player profile |
+| `chronopin-progression` | XP + lifetime XP |
 | `chronopin-social` | Friend ids, request ids |
-| `chronopin-social-messages` | Friend chat (local) |
+| `chronopin-social-messages` | Friend chat (local only) |
 | `chronopin-match-chat` | Match chat cache |
 | `chronopin-coop-rooms` / `coop-invites` / `coop-active` | Co-op state |
 | `chronopin-trashed-panos` / `seen-panos` | Library |
+| `chronopin-pano-ratings` | Panorama difficulty cache (1–3★); synced to Firestore `panoramaRatings` when signed in |
 | `chronopin-daily` / `chronopin-stash` | Daily rewards |
 | `chronopin-scoreboard` / `player-stats` | Solo meta |
+
+Factory reset (`app-reset.ts`) removes **all** keys with prefix `chronopin-` (including progression).
 
 Writes use `safeStorageSet()` — fails silently on quota/private mode.
 
@@ -142,13 +196,27 @@ Writes use `safeStorageSet()` — fails silently on quota/private mode.
 | `explore` | Pinning phase |
 | `host_pinned` | Async: guest's turn |
 | `reveal` | Both pins visible |
-| `vote` | Team picks final pin |
+| `vote` | Team picks final pin (preference + confirm) |
 | `result` | Score shown |
-| `done` | Room closed |
+| `done` | Room closed — partner syncs out of active game |
 
-**Quit behaviour:** `leaveCoopRunLocally()` on exit mid-game — does not set `done` for partner. `finishCoopRoom()` only after result screen.
+**Firestore sync:**
+- **Patch-only writes** (`patchCoopRoomInFirestore`) — never null out partner pin/vote on merge
+- **Pin sanitize** — `year` omitted for Classic (undefined rejected by Firestore)
+- **Live polling** on wait / reveal / vote screens when partner is slow
+
+**Quit / delete:**
+- `leaveCoopRunLocally()` — exit UI without closing room for partner
+- `abandonCoopGame()` — delete active game (Games tab ✕ or wait screen); sets room `phase: 'done'` for partner
+- `finishCoopRoom()` — after result screen when match is fully done
 
 **Offline demo:** `simulatePartnerPin/Vote()` visible only when Firebase is not configured.
+
+---
+
+## Admin panel
+
+Players named **Admin**, **Dary**, or **Daryoush** get ⚙ on Home → search cloud players, grant stash items / bonus hearts, delete accounts. Requires `isAdminUser()` in deployed Firestore rules.
 
 ---
 
@@ -157,10 +225,11 @@ Writes use `safeStorageSet()` — fails silently on quota/private mode.
 | Area | Status |
 |---|---|
 | 1v1 Duel / Battle Royale | UI only |
-| Friend DMs | localStorage only |
-| Scoreboard cloud sync | Not implemented |
+| Friend DMs | localStorage only (no Firestore friend chat) |
+| XP / level cloud sync | Local only |
+| Level perks | Placeholder text only — no gameplay effect yet |
 | Pano/map loading UI | None (blank until loaded) |
-| Bundle size | ~1.6 MB JS (MapLibre eager load) |
+| Bundle size | ~1.7 MB JS (MapLibre eager load) |
 
 ---
 
@@ -169,9 +238,17 @@ Writes use `safeStorageSet()` — fails silently on quota/private mode.
 ```bash
 cd web
 npm run build          # default base /
-npm run build:strato   # base /app/Chrono/
+npm run build:strato   # base /Chrono/ (web/.env.production)
 ```
 
 Upload `web/dist/` to static host. See [`STRATO_DEPLOY.md`](./STRATO_DEPLOY.md).
+
+**E2E (Co-op smoke test):**
+
+```bash
+cd web
+node scripts/coop-multiplayer-e2e.mjs                              # live
+node scripts/coop-multiplayer-e2e.mjs http://127.0.0.1:4173/Chrono/ # local preview
+```
 
 Do not commit `web/dist/`, `node_modules/`, or `web/.env`.

@@ -146,5 +146,18 @@ service cloud.firestore {
                 && request.resource.data.rounds >= resource.data.rounds));
       allow delete: if isAdminUser();
     }
+
+    // Shared panorama difficulty ratings (1–3 stars) for library / future filters
+    match /panoramaRatings/{panoId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 3
+        && request.resource.data.updatedAt is number
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedByName is string;
+      allow delete: if signedIn();
+    }
   }
 }

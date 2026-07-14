@@ -10,7 +10,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import type { CoopInvite, CoopRoom, CoopPin } from '../data/coop';
-import { applyRemoteCoopRoom, applyRemoteCoopInvite } from '../data/coop';
+import { applyRemoteCoopRoom, applyRemoteCoopInvite, getResolvedCoopRoom } from '../data/coop';
 import { getFirebaseDb, isFirebaseConfigured } from './firebase';
 
 function roomRef(roomId: string) {
@@ -101,13 +101,19 @@ export function subscribeCoopRoom(
   return onSnapshot(
     roomRef(roomId),
     (snap) => {
-      if (!snap.exists()) {
-        onUpdate(null);
-        return;
-      }
-      const remote = { ...(snap.data() as CoopRoom), id: roomId };
-      applyRemoteCoopRoom(remote);
-      onUpdate(remote);
+      void (async () => {
+        if (!snap.exists()) {
+          onUpdate(null);
+          return;
+        }
+        let remote = { ...(snap.data() as CoopRoom), id: roomId };
+        if (snap.metadata.fromCache) {
+          const fresh = await pullCoopRoomFromFirestore(roomId);
+          if (fresh) remote = fresh;
+        }
+        applyRemoteCoopRoom(remote);
+        onUpdate(getResolvedCoopRoom(roomId) ?? remote);
+      })();
     },
     (err) => console.warn('[ChronoPin] coop room listener:', err),
   );
@@ -208,8 +214,12 @@ export function subscribeMyCoopRooms(
   const applySnap = (snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => {
     snap.docs.forEach((d) => {
       const room = { ...(d.data() as unknown as CoopRoom), id: d.id };
-      if (room.phase === 'done') byId.delete(d.id);
-      else byId.set(d.id, room);
+      if (room.phase === 'done') {
+        byId.delete(d.id);
+        applyRemoteCoopRoom(room);
+      } else {
+        byId.set(d.id, room);
+      }
     });
     emit();
   };

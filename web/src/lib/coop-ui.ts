@@ -1,6 +1,8 @@
 import type { CoopInvite, CoopRoom, CoopSyncMode, CoopVoteChoice } from '../data/coop';
 import {
   coopPhaseLabel,
+  coopVoteLabel,
+  coopVotesAgree,
   describeCoopSession,
   getMyActiveCoopRooms,
   getPendingCoopInvitesFromMe,
@@ -154,7 +156,7 @@ export function renderCoopWaitScreen(
       <div class="coop-wait-content">
         <span class="coop-wait-icon">⏳</span>
         <h2>${escapeHtml(coopPhaseLabel(room, myRole))}</h2>
-        <p class="coop-wait-sub">${escapeHtml(room.roundTitle)} · ${modeLabel(room.gameMode)}</p>
+        <p class="coop-wait-sub">${modeLabel(room.gameMode)} · Mystery scene</p>
         <p class="coop-wait-hint">${waitHint}</p>
         <button type="button" class="btn btn-secondary" data-action="coop-refresh">Check now</button>
         ${
@@ -197,39 +199,71 @@ export function renderCoopVote(
   options: { offlineDemo?: boolean } = {},
 ): string {
   const { offlineDemo = false } = options;
-  const waitingPartner =
-    (myRole === 'host' && room.hostVote && !room.guestVote) ||
-    (myRole === 'guest' && room.guestVote && !room.hostVote);
+  const partnerName = myRole === 'host' ? room.guestName : room.hostName;
+  const partnerVote = myRole === 'host' ? room.guestVote : room.hostVote;
+  const agree = coopVotesAgree(room);
+
+  const voteBtn = (choice: CoopVoteChoice, title: string, sub: string) => {
+    const partnerPicked = partnerVote === choice;
+    const myPicked = myVote === choice;
+    return `
+      <button
+        type="button"
+        class="coop-vote-btn ${myPicked ? 'active' : ''} ${partnerPicked ? 'partner-picked' : ''}"
+        data-action="coop-vote"
+        data-vote="${choice}"
+      >
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(sub)}</span>
+        ${partnerPicked ? `<em class="coop-vote-partner-tag">${escapeHtml(partnerName)} picked this</em>` : ''}
+        ${myPicked ? `<em class="coop-vote-you-tag">Your pick</em>` : ''}
+      </button>`;
+  };
 
   return `
     <div class="screen screen-coop-vote">
       <div class="coop-vote-header">
         <h2>Team vote</h2>
-        <p>Pick which pin becomes your official guess — or split the difference.</p>
+        <p>Pick a final team guess — you can change until you both agree and submit.</p>
       </div>
       <div id="coop-vote-map" class="map-container map-result"></div>
+
+      <div class="coop-vote-status">
+        <div class="coop-vote-status-row">
+          <span>You</span>
+          <strong>${myVote ? escapeHtml(coopVoteLabel(room, myVote)) : 'Not chosen yet'}</strong>
+        </div>
+        <div class="coop-vote-status-row">
+          <span>${escapeHtml(partnerName)}</span>
+          <strong>${partnerVote ? escapeHtml(coopVoteLabel(room, partnerVote)) : 'Still choosing…'}</strong>
+        </div>
+      </div>
+
       ${
-        waitingPartner
-          ? `<p class="coop-wait-hint">Waiting for ${escapeHtml(myRole === 'host' ? room.guestName : room.hostName)} to vote…</p>
-             ${
-               offlineDemo
-                 ? `<button type="button" class="btn btn-secondary" data-action="coop-simulate-vote">Simulate partner vote</button>`
-                 : ''
-             }`
-          : `<div class="coop-vote-options">
-              <button type="button" class="coop-vote-btn ${myVote === 'host' ? 'active' : ''}" data-action="coop-vote" data-vote="host">
-                <strong>${escapeHtml(room.hostName)}'s pin</strong>
-                <span>Use host guess</span>
-              </button>
-              <button type="button" class="coop-vote-btn ${myVote === 'midpoint' ? 'active' : ''}" data-action="coop-vote" data-vote="midpoint">
-                <strong>Midpoint</strong>
-                <span>Split the difference</span>
-              </button>
-              <button type="button" class="coop-vote-btn ${myVote === 'guest' ? 'active' : ''}" data-action="coop-vote" data-vote="guest">
-                <strong>${escapeHtml(room.guestName)}'s pin</strong>
-                <span>Use guest guess</span>
-              </button>
-            </div>`
+        agree
+          ? `<p class="coop-vote-agree">✓ You both picked <strong>${escapeHtml(coopVoteLabel(room, myVote!))}</strong></p>`
+          : myVote && partnerVote
+            ? `<p class="coop-vote-disagree">Different picks — talk it out or change your choice.</p>`
+            : `<p class="coop-vote-hint">Tap a pin option below. You can switch anytime before submitting.</p>`
+      }
+
+      <div class="coop-vote-options">
+        ${voteBtn('host', `${room.hostName}'s pin`, 'Use host guess')}
+        ${voteBtn('midpoint', 'Midpoint', 'Split the difference')}
+        ${voteBtn('guest', `${room.guestName}'s pin`, 'Use guest guess')}
+      </div>
+
+      <button
+        type="button"
+        class="btn btn-primary btn-lg coop-confirm-vote-btn"
+        data-action="coop-confirm-vote"
+        ${agree ? '' : 'disabled'}
+      >Submit team guess</button>
+
+      ${
+        offlineDemo && partnerVote && !agree
+          ? `<button type="button" class="btn btn-secondary" data-action="coop-simulate-vote">Simulate partner vote</button>`
+          : ''
       }
       <button type="button" class="btn btn-secondary" data-action="quit">Leave</button>
     </div>`;
@@ -241,6 +275,7 @@ export function renderCoopResult(
   distanceKm: number,
   points: number,
   maxPoints: number,
+  xpBannerHtml = '',
 ): string {
   const pct = Math.round((points / maxPoints) * 100);
   const partnerName = myRole === 'host' ? room.guestName : room.hostName;
@@ -250,6 +285,7 @@ export function renderCoopResult(
         <span class="grade-badge">${pct >= 80 ? 'A' : pct >= 60 ? 'B' : pct >= 40 ? 'C' : 'D'}</span>
         <h2>${pct}% team score</h2>
         <p>+${points.toLocaleString('en-GB')} pts · ${distanceKm.toFixed(0)} km off</p>
+        ${xpBannerHtml}
       </div>
       <div id="coop-result-map" class="map-container map-result"></div>
       <div class="coop-result-card">
@@ -315,7 +351,7 @@ export function renderCoopGamesTab(
           <div class="coop-game-meta">
             <strong>vs ${escapeHtml(info.partnerName)}</strong>
             <span>${syncModeLabel(room.syncMode)} · ${modeLabel(room.gameMode)}</span>
-            <span class="coop-game-scene">${escapeHtml(room.roundTitle)}</span>
+            <span class="coop-game-scene">${room.phase === 'result' || room.phase === 'done' ? escapeHtml(room.roundTitle) : 'Mystery scene'}</span>
             <span class="coop-game-phase">${escapeHtml(info.phaseLabel)}</span>
           </div>
           <div class="coop-game-actions">

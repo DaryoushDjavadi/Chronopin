@@ -129,10 +129,19 @@ export function mergeCoopRoomState(local: CoopRoom, remote: CoopRoom): CoopRoom 
     }
   }
 
-  if (hostVote && guestVote && phaseRank(phase) < phaseRank('result')) {
+  if (finalPin && phaseRank(phase) < phaseRank('result')) {
     phase = 'result';
-  } else if ((hostVote || guestVote) && phaseRank(phase) >= phaseRank('reveal') && phaseRank(phase) < phaseRank('vote')) {
-    phase = 'vote';
+  } else if (
+    !finalPin &&
+    phaseRank(phase) >= phaseRank('reveal') &&
+    (hostVote ||
+      guestVote ||
+      newer.phase === 'vote' ||
+      local.phase === 'vote' ||
+      remote.phase === 'vote')
+  ) {
+    if (phaseRank(phase) < phaseRank('vote')) phase = 'vote';
+    else if (phase === 'result') phase = 'vote';
   }
 
   return {
@@ -159,12 +168,13 @@ export function normalizeCoopRoomPhase(room: CoopRoom): CoopRoom {
       phase = 'host_pinned';
     }
   }
-  if (room.hostVote && room.guestVote && phaseRank(phase) < phaseRank('result')) {
+  if (room.finalPin && phaseRank(phase) < phaseRank('result')) {
     phase = 'result';
   } else if (
-    (room.hostVote || room.guestVote) &&
+    !room.finalPin &&
+    (room.phase === 'vote' || room.hostVote || room.guestVote) &&
     phaseRank(phase) >= phaseRank('reveal') &&
-    phaseRank(phase) < phaseRank('vote')
+    phaseRank(phase) < phaseRank('result')
   ) {
     phase = 'vote';
   }
@@ -507,7 +517,11 @@ export function abandonCoopGame(roomId: string): void {
   const room = getCoopRoom(roomId);
   if (!room) return;
   room.phase = 'done';
-  updateCoopRoom(room);
+  room.updatedAt = Date.now();
+  updateCoopRoom(room, { skipCloud: true });
+  void patchCoopRoomInFirestore(roomId, { phase: 'done' }).catch((err) =>
+    console.warn('[ChronoPin] Firestore coop abandon sync failed:', err),
+  );
   if (getActiveCoopRoomId() === roomId) setActiveCoopRoomId(null);
 }
 
@@ -532,7 +546,22 @@ export function simulatePartnerPin(
   return submitCoopPin(roomId, role, pin);
 }
 
-export function submitCoopVote(
+export function coopVotesAgree(room: CoopRoom): boolean {
+  return Boolean(room.hostVote && room.guestVote && room.hostVote === room.guestVote);
+}
+
+export function coopVoteLabel(room: CoopRoom, choice: CoopVoteChoice): string {
+  switch (choice) {
+    case 'host':
+      return `${room.hostName}'s pin`;
+    case 'guest':
+      return `${room.guestName}'s pin`;
+    case 'midpoint':
+      return 'Midpoint';
+  }
+}
+
+export function setCoopVotePreference(
   roomId: string,
   role: 'host' | 'guest',
   vote: CoopVoteChoice,
@@ -543,16 +572,47 @@ export function submitCoopVote(
   if (role === 'host') room.hostVote = vote;
   else room.guestVote = vote;
 
-  if (room.hostVote && room.guestVote) {
-    const finalChoice =
-      room.hostVote === room.guestVote ? room.hostVote : 'midpoint';
-    room.finalPin = computeFinalPin(room, finalChoice);
-    room.phase = 'result';
-  } else {
-    room.phase = 'vote';
-  }
+  room.phase = 'vote';
+  room.finalPin = null;
 
-  updateCoopRoom(room);
+  const normalized = normalizeCoopRoomPhase(room);
+  updateCoopRoom(normalized, { skipCloud: true });
+
+  const patch: Partial<CoopRoom> = { phase: 'vote' };
+  if (role === 'host') patch.hostVote = vote;
+  else patch.guestVote = vote;
+  void patchCoopRoomInFirestore(roomId, patch).catch((err) =>
+    console.warn('[ChronoPin] Firestore coop vote sync failed:', err),
+  );
+
+  return normalized;
+}
+
+/** @deprecated use setCoopVotePreference + confirmCoopTeamVote */
+export function submitCoopVote(
+  roomId: string,
+  role: 'host' | 'guest',
+  vote: CoopVoteChoice,
+): CoopRoom | null {
+  return setCoopVotePreference(roomId, role, vote);
+}
+
+export function confirmCoopTeamVote(roomId: string): CoopRoom | null {
+  const room = getCoopRoom(roomId);
+  if (!room || !coopVotesAgree(room) || !room.hostVote) return null;
+
+  room.finalPin = computeFinalPin(room, room.hostVote);
+  room.phase = 'result';
+  room.updatedAt = Date.now();
+
+  updateCoopRoom(room, { skipCloud: true });
+  void patchCoopRoomInFirestore(roomId, {
+    phase: 'result',
+    finalPin: room.finalPin,
+    hostVote: room.hostVote,
+    guestVote: room.guestVote,
+  }).catch((err) => console.warn('[ChronoPin] Firestore coop confirm sync failed:', err));
+
   return room;
 }
 
@@ -581,14 +641,18 @@ export function simulatePartnerVote(roomId: string): CoopRoom | null {
   if (!role) return room;
   const choices: CoopVoteChoice[] = ['host', 'guest', 'midpoint'];
   const vote = choices[Math.floor(Math.random() * choices.length)]!;
-  return submitCoopVote(roomId, role, vote);
+  return setCoopVotePreference(roomId, role, vote);
 }
 
 export function advanceCoopToVote(roomId: string): CoopRoom | null {
   const room = getCoopRoom(roomId);
   if (!room || room.phase !== 'reveal') return null;
   room.phase = 'vote';
-  updateCoopRoom(room);
+  room.updatedAt = Date.now();
+  updateCoopRoom(room, { skipCloud: true });
+  void patchCoopRoomInFirestore(roomId, { phase: 'vote' }).catch((err) =>
+    console.warn('[ChronoPin] Firestore coop vote phase sync failed:', err),
+  );
   return room;
 }
 

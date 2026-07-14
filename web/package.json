@@ -8,10 +8,14 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "import:panos": "node scripts/import-external-panos.mjs",
+    "import:panos:merge": "node scripts/import-external-panos.mjs --source all --merge",
+    "import:wikimedia": "node scripts/import-wikimedia-panos.mjs",
+    "test:mapillary": "node scripts/test-mapillary.mjs",
     "build:strato": "tsc && vite build --mode production"
   },
   "dependencies": {
     "firebase": "^12.16.0",
+    "mapillary-js": "^4.1.2",
     "maplibre-gl": "^4.7.1"
   },
   "devDependencies": {

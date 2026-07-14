@@ -46,6 +46,8 @@ Guess **where** you are. In time modes, also guess **when**.
 - Verlassen beendet Match nicht für Partner
 - **Global Scoreboard** (Firestore sync, ein Eintrag pro Spieler/Modus)
 - **Animierte Avatare** an Map-Pins (Co-op & Solo)
+- **Runden-Intro-Animation** beim Start jeder Runde (Overlay, ~2,8 s)
+- **XP & Level** — Punkte für gute Runden, Runs und Co-op; Level-Badge auf Home, XP-Balken in Player Info; Perks als Platzhalter für später
 
 **Deploy**
 - **Strato**-Build (`npm run build:strato`, Base `/Chrono/`) — Live: **https://media-acht.de/Chrono/** — [`docs/STRATO_DEPLOY.md`](./docs/STRATO_DEPLOY.md)

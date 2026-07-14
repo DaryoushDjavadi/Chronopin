@@ -14,11 +14,11 @@ The playable demo in [`web/`](../web/) uses only assets we can document and attr
 
 ### Panoramas (Classic mode test content)
 
-- **29 equirectangular JPGs** in `web/public/panoramas/`
-- Source: **Wikimedia Commons** (CC BY-SA 3.0 / 4.0 and similar — per-file in [`web/public/panoramas/LICENSE.md`](../web/public/panoramas/LICENSE.md))
-- Downloaded via Wikimedia `Special:FilePath?width=1536` (scaled, not full resolution)
+- **~44 equirectangular scenes** in the library (Wikimedia + Panoramax imports under `web/public/panoramas/`)
+- Source: **Wikimedia Commons** (CC BY-SA 3.0 / 4.0 and similar — per-file in [`web/public/panoramas/LICENSE.md`](../web/public/panoramas/LICENSE.md)) plus **Panoramax** where noted
+- Downloaded via Wikimedia `Special:FilePath?width=1536` (scaled, not full resolution) or import script
 - **Commercial use:** CC BY-SA generally allows commercial use **with attribution and ShareAlike on derivatives** — confirm per file; keep attribution in-app and in repo
-- **Not for final product volume alone** — curated/owned packs or Mapillary (see below) remain the commercial Classic strategy; Wikimedia is fine for **prototype / dev testing**
+- **Not for final product volume alone** — curated/owned packs or Mapillary (see below) remain the commercial Classic strategy; Wikimedia/Panoramax is fine for **prototype / dev testing**
 
 ### Avatar sprites (Universal LPC)
 
@@ -26,7 +26,7 @@ The playable demo in [`web/`](../web/) uses only assets we can document and attr
 - Source: [Universal LPC Spritesheet Character Generator](https://github.com/LiberatedPixelCup/Universal-LPC-Spritesheet-Character-Generator)
 - Licenses: **CC-BY-SA 3.0**, **GPL 3.0**, **OGA-BY 3.0** (per layer — see [`web/public/avatar/lpc/LICENSE.md`](../web/public/avatar/lpc/LICENSE.md) and upstream CREDITS.csv)
 - **Before paid launch:** audit CREDITS.csv; prefer CC0/OGA-BY layers where possible; show in-app credits
-- Home menu **Attributes / Credits** overlay lists body/head/face attribution (`data/avatar-credits.ts`); editor footer links to Universal LPC
+- Home menu **Attributes / Credits** overlay lists body/head/face attribution (`data/avatar-credits.ts`, `lib/credits-ui.ts`); editor footer links to Universal LPC
 - ShareAlike may affect **redistributing modified sprite sheets** — document what you ship
 
 ### App branding
@@ -42,11 +42,16 @@ The playable demo in [`web/`](../web/) uses only assets we can document and attr
 | **Pannellum** (jsDelivr CDN) | 360° panorama viewer | MIT license; CDN script in `index.html` |
 | **Google Fonts** | DM Sans, JetBrains Mono, Press Start 2P | SIL Open Font License |
 
-### Web prototype — not production-ready for rights
+### Web prototype — production gaps (rights & scope)
 
-- Past/Future rounds use **placeholder years** on Classic panoramas (no separate AI assets yet)
-- Social, multiplayer, Firebase = **mock UI only**
-- No Mapillary / live street API integration yet
+| Area | Prototype status |
+|---|---|
+| Classic panoramas | Wikimedia + Panoramax test set — replace/expand for store |
+| Past/Future rounds | Placeholder years on Classic panos (no separate AI asset packs yet) |
+| Social / Co-op / Scoreboard | **Real Firebase** when `.env` configured — not mock UI |
+| XP / Level progression | **Local only** (`localStorage`) — no cloud account data yet |
+| Level perks | Placeholder copy only — no gameplay bonuses shipped |
+| Mapillary / live street API | Import script exists; not core gameplay yet |
 
 ---
 
@@ -99,6 +104,7 @@ Do **not** scrape or bulk-store Google Street View. GeoGuessr can; indie apps ge
 #### D) Panoramax
 - Open / FOSS-friendly street imagery (stronger in some EU regions)
 - Check instance license per dataset; promising long-term alternative
+- **Already used** in web prototype import pipeline (`npm run import:panos -- --source panoramax`)
 
 ### Guess map (the pin UI)
 Prefer **not Google**:
@@ -179,18 +185,26 @@ Prefer **API / business account**, not consumer ChatGPT screengrabs.
 
 ## Architecture sketch (commercial-friendly)
 
-<!-- TODO: expand with app ↔ CDN ↔ pack manifest ↔ multiplayer sync diagram -->
+```
+[Expo app]
+  ├── Classic packs → CDN images you license/own
+  ├── Past packs → CDN AI assets you generated
+  ├── Future packs → CDN AI assets you generated
+  ├── Map → MapLibre + OSM/MapTiler (pin only)
+  └── Multiplayer → Firebase / Supabase rooms (co-op, duel)
 
-See also: [`README.md`](../README.md) for product scope, modes, and V1 roadmap.
+[Content pipeline — offline]
+  script → AI API → QA → upload CDN → publish round manifest
 
-
-[Expo app] ├── Classic packs → CDN images you license/own ├── Past packs → CDN AI assets you generated ├── Future packs → CDN AI assets you generated ├── Map → MapLibre + OSM/MapTiler (pin only) └── Multiplayer → Firebase / Supabase rooms (co-op, duel)
-
-[Content pipeline - offline] script → AI API → QA → upload CDN → publish round manifest
-
-
+[Web prototype today]
+  ├── Static hosting (Strato /Chrono/ or Firebase Hosting)
+  ├── Firebase Auth + Firestore (profile, friends, co-op, scoreboard)
+  └── localStorage (XP, stash, local chat cache, offline coop demo)
+```
 
 Multiplayer (co-op decide, 1v1) only syncs **guesses / pins / votes**, not heavy imagery (clients pull the same pack id).
+
+**Progression (future):** XP/level can stay device-local for privacy-light V1, or sync to `users/{uid}` once perks affect multiplayer fairness — decide before shipping paid perks.
 
 ---
 
@@ -203,13 +217,16 @@ Multiplayer (co-op decide, 1v1) only syncs **guesses / pins / votes**, not heavy
 ---
 
 ## Suggested build order (rights-first)
-0. **Done:** Web prototype with Wikimedia Classic pack + LPC avatars ([`web/`](../web/), [`WEB_PROTOTYPE.md`](./WEB_PROTOTYPE.md))  
+
+0. **Done:** Web prototype with Wikimedia/Panoramax Classic pack + LPC avatars + Firebase co-op ([`web/`](../web/), [`WEB_PROTOTYPE.md`](./WEB_PROTOTYPE.md))  
 1. Solo Classic with **owned/curated** static rounds + OSM map (replace/expand Wikimedia test set for store)  
 2. Past pack via AI pipeline + in-app “AI reconstruction” label  
-3. Co-op Decide + 1v1 (room codes)  
-4. Future pack  
-5. Optional: Mapillary/Panoramax “live classic” if legal review OK  
-6. Later: Battle Royale  
+3. ~~Co-op Decide (2 players)~~ — **playable** in web prototype with Firebase  
+4. 1v1 Duel (room codes)  
+5. Future pack  
+6. XP perks with real gameplay effect + optional cloud sync  
+7. Optional: Mapillary/Panoramax “live classic” if legal review OK  
+8. Later: Battle Royale  
 
 ---
 

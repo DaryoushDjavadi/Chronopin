@@ -41,6 +41,8 @@ Without Firebase (no `.env`), everything runs offline in `localStorage`.
 - **Inventory:** binoculars, North Star (1× per item per round)
 - **Scoreboard** (local + Firestore sync when online)
 - **Player stats** (local)
+- **XP & Level** — local progression (`chronopin-progression`); round/run/coop awards; level badge on home; perk placeholders in Player info
+- **Round intro** — animated overlay when each round starts (before panorama loads)
 
 ## Multiplayer — Co-op Decide ✅
 
@@ -163,7 +165,10 @@ src/
 ├── lib/admin.ts            # Admin name check
 ├── lib/admin-ui.ts         # Admin overlay
 ├── lib/firebase-admin.ts   # Admin cloud actions
-├── lib/coop-ui.ts          # Co-op + multiplayer UI
+├── lib/progression.ts       # XP, levels, badges
+├── lib/round-intro-ui.ts    # Round-start overlay
+├── lib/credits-ui.ts        # Attributes / Credits overlay
+├── lib/coop-ui.ts           # Co-op + multiplayer UI
 ├── lib/match-chat-ui.ts    # Match chat overlay & toasts
 ├── lib/firebase-*.ts       # Auth, profile, friends, coop sync
 └── lib/app-reset.ts        # Factory reset (Player info)
