@@ -1,0 +1,69 @@
+import { getVisiblePanoramas, panoramaUrl } from '../lib/library';
+import type { GameMode, PanoramaAsset, Round } from '../types';
+
+function assetToRound(asset: PanoramaAsset, mode: GameMode): Round {
+  const label = `${asset.title}, ${asset.region.split(',')[0]}`;
+  const year =
+    mode === 'past'
+      ? asset.year ?? 1900
+      : mode === 'future'
+        ? 2040
+        : undefined;
+
+  return {
+    id: `${asset.id}-${mode}`,
+    panoramaId: asset.id,
+    modes: asset.modes.includes(mode) ? [mode] : [mode],
+    title: asset.title,
+    panorama: panoramaUrl(asset),
+    panoConfig: asset.panoConfig,
+    answer: {
+      lat: asset.lat,
+      lng: asset.lng,
+      year,
+      label,
+    },
+    context:
+      mode === 'future'
+        ? `${asset.context} (Future demo — speculative ${year}.)`
+        : mode === 'past' && asset.year
+          ? `${asset.context} Guess the year from visual clues.`
+          : asset.context,
+    attribution: asset.attribution,
+    license: asset.license,
+    isAiGenerated: mode === 'future' ? true : asset.isAiGenerated,
+  };
+}
+
+export function getRoundPool(mode: GameMode): Round[] {
+  return getVisiblePanoramas()
+    .filter((p) => {
+      if (mode === 'future') return p.modes.includes('classic') || p.modes.includes('future');
+      return p.modes.includes(mode);
+    })
+    .map((p) => assetToRound(p, mode));
+}
+
+export function pickRound(mode: GameMode, excludeIds: string[] = []): Round | null {
+  const pool = getRoundPool(mode).filter((r) => !excludeIds.includes(r.id));
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)]!;
+}
+
+export function modeLabel(mode: GameMode): string {
+  const labels: Record<GameMode, string> = {
+    classic: 'Classic',
+    past: 'Past',
+    future: 'Future',
+  };
+  return labels[mode];
+}
+
+export function modeDescription(mode: GameMode): string {
+  const descriptions: Record<GameMode, string> = {
+    classic: 'Present-day location. Pin where you are.',
+    past: 'Historical scene. Pin the place and guess the year.',
+    future: 'Speculative fiction. Pin the place and guess the year.',
+  };
+  return descriptions[mode];
+}
