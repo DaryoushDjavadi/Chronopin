@@ -17,5 +17,8 @@ declare const pannellum: {
   viewer: (
     container: string | HTMLElement,
     config: Record<string, unknown>,
-  ) => { destroy: () => void };
+  ) => {
+    destroy: () => void;
+    on: (event: string, fn: () => void) => void;
+  };
 };

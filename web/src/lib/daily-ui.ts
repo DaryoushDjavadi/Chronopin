@@ -50,7 +50,8 @@ export function renderDailyHomeCard(): string {
       <span class="daily-icon" aria-hidden="true">📅</span>
       <div class="daily-card-body">
         <strong>Daily ChronoPin</strong>
-        <span>One scene · spin the wheel for loot</span>
+        <span class="daily-card-lead">Play Daily Challenge</span>
+        <span>Spin the wheel for loot</span>
       </div>
       <span class="daily-cta">Play →</span>
     </button>`;

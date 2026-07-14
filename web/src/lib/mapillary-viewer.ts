@@ -12,6 +12,7 @@ async function ensureMapillaryCss(): Promise<void> {
 export async function mountMapillaryViewer(
   containerId: string,
   imageId: string,
+  onReady?: () => void,
 ): Promise<void> {
   const token = getMapillaryAccessToken();
   if (!token) throw new Error('Mapillary token not configured');
@@ -36,6 +37,17 @@ export async function mountMapillaryViewer(
       sequence: false,
     },
   });
+
+  if (onReady) {
+    let ready = false;
+    const finish = () => {
+      if (ready) return;
+      ready = true;
+      onReady();
+    };
+    viewer.on('image', finish);
+    viewer.on('load', finish);
+  }
 
   activeViewer = viewer;
 }

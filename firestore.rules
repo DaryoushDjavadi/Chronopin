@@ -159,5 +159,26 @@ service cloud.firestore {
         && request.resource.data.updatedByName is string;
       allow delete: if signedIn();
     }
+
+    // Player-reported faulty panoramas — admins review in library
+    match /panoramaReports/{panoId} {
+      allow read: if isAdminUser();
+      allow create: if signedIn()
+        && request.resource.data.panoId == panoId
+        && request.resource.data.status == 'pending'
+        && request.resource.data.reportCount is int
+        && request.resource.data.reportCount >= 1
+        && request.resource.data.updatedAt is number
+        && request.resource.data.lastReporterUid == request.auth.uid
+        && request.resource.data.lastReporterName is string;
+      allow update: if isAdminUser()
+        || (signedIn()
+            && request.resource.data.panoId == panoId
+            && request.resource.data.status == 'pending'
+            && request.resource.data.lastReporterUid == request.auth.uid
+            && request.resource.data.reportCount is int
+            && request.resource.data.reportCount >= resource.data.reportCount);
+      allow delete: if isAdminUser();
+    }
   }
 }

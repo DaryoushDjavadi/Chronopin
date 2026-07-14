@@ -113,6 +113,10 @@ export interface AppState {
   session: GameSession | null;
   libraryIndex: number;
   libraryViewId: string | null;
+  /** Panorama library: browse all vs admin review queue */
+  libraryTab: 'browse' | 'review';
+  /** Opened from "Zur Überprüfung" — show keep/trash actions */
+  libraryReviewMode: boolean;
   scoreboardFilter: GameMode | 'all';
   avatarConfig: AvatarConfig;
   avatarEditorOpenCategory: AvatarCategory | null;

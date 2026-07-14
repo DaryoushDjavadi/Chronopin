@@ -102,6 +102,7 @@ import {
 import { renderRoundIntroOverlay } from './lib/round-intro-ui';
 import { isMapillaryLiveEnabled } from './lib/mapillary-api';
 import { mountMapillaryViewer, destroyMapillaryViewer } from './lib/mapillary-viewer';
+import { showPanoLoading, hidePanoLoading } from './lib/pano-loading-ui';
 import {
   ensureMapillaryAssetResolved,
   getMapillaryLiveImageId,
@@ -144,6 +145,11 @@ import {
   groupVisiblePanoramasBySource,
   isLibraryGroupExpanded,
   toggleLibraryGroupExpanded,
+  isLibraryCountryExpanded,
+  toggleLibraryCountryExpanded,
+  getPanoramaLocality,
+  isLibraryTrashExpanded,
+  toggleLibraryTrashExpanded,
 } from './lib/library';
 import {
   getPanoramaDifficulty,
@@ -153,6 +159,17 @@ import {
   syncPanoramaRatingsFromCloud,
   type PanoramaDifficulty,
 } from './lib/pano-ratings';
+import {
+  formatReportMeta,
+  getPanoramaReport,
+  getPanoramasPendingReview,
+  getPendingReportCount,
+  hasUserReportedPanorama,
+  keepReportedPanorama,
+  reportPanorama,
+  syncPanoramaReportsFromCloud,
+  trashReportedPanorama,
+} from './lib/pano-reports';
 import {
   classicRegionLabel,
   getClassicRegionPanoramaCount,
@@ -252,6 +269,8 @@ let state: AppState = {
   session: null,
   libraryIndex: 0,
   libraryViewId: null,
+  libraryTab: 'browse',
+  libraryReviewMode: false,
   scoreboardFilter: 'all',
   avatarConfig: getProfile()?.avatarConfig ?? getDefaultAvatarConfig(),
   avatarEditorOpenCategory: null,
@@ -299,7 +318,7 @@ let state: AppState = {
 let scoreSavedForSession = false;
 let gameStatsRecorded = false;
 
-let panoViewer: { destroy: () => void } | null = null;
+let panoViewer: { destroy: () => void; on: (event: string, fn: () => void) => void } | null = null;
 let panoInitToken = 0;
 let map: maplibregl.Map | null = null;
 let guessMarker: maplibregl.Marker | null = null;
@@ -409,10 +428,6 @@ function renderHome(): string {
     return info.myRole === 'host' && info.needsAttention;
   });
   const mpFriends = getFriends();
-  const mpFriendReady =
-    mpFriends.length > 0 &&
-    state.coopSetupFriendId !== null &&
-    mpFriends.some((f) => f.id === state.coopSetupFriendId);
 
   return `
     <div class="screen screen-home">
@@ -551,9 +566,9 @@ function renderHome(): string {
           <p class="hint">Pick a friend, then choose a multiplayer mode.</p>
           ${renderMultiplayerFriendPicker(mpFriends, state.coopSetupFriendId)}
           <div class="mp-grid" data-mp-grid>
-            ${renderMpCard('Co-op Decide', 'Blind pin → reveal → vote on one final pin', '2 players · Live or async', true, 'coop-decide', mpFriendReady)}
-            ${renderMpCard('1v1 Duel', 'Same scene, closest guess wins the round', 'Best of 5 · Coming soon', false)}
-            ${renderMpCard('Battle Royale', '4–8 players, elimination rounds', 'Coming soon', false)}
+            ${renderCoopDecideCard(mpFriends, state.coopSetupFriendId)}
+            ${renderMpSoonCard('1v1 Duel', 'Same scene, closest guess wins the round', 'Best of 5 · Coming soon')}
+            ${renderMpSoonCard('Battle Royale', '4–8 players, elimination rounds', 'Coming soon')}
           </div>
         </div>
       </section>
@@ -843,6 +858,14 @@ async function startPostLoginCloudSync(backgroundOnly = false): Promise<void> {
     await syncSocialFromCloud().catch(() => undefined);
     await syncScoreboardFromCloud().catch(() => undefined);
     await syncPanoramaRatingsFromCloud().catch(() => undefined);
+    await syncPanoramaReportsFromCloud().catch(() => undefined);
+    if (state.screen === 'home' && state.playType === 'multiplayer') {
+      const friends = getFriends();
+      if (friends.length > 0 && !state.coopSetupFriendId) {
+        state.coopSetupFriendId = friends[0]!.id;
+      }
+      patchHomeOverlays();
+    }
     startCloudCoopSync(() => {
       if (state.screen === 'home') render();
       else if (state.socialOpen) patchHomeOverlays();
@@ -1037,21 +1060,32 @@ function renderScoreboard(): string {
   `;
 }
 
-function renderMpCard(
-  title: string,
-  desc: string,
-  meta: string,
-  highlight: boolean,
-  action?: string,
-  ready = false,
-): string {
-  const enabled = action === 'coop-decide' && ready;
-  const highlighted = highlight && enabled;
+function renderCoopDecideCard(friends: import('./data/social').FriendProfile[], selectedFriendId: string | null): string {
+  const ready =
+    friends.length > 0 &&
+    selectedFriendId !== null &&
+    friends.some((f) => f.id === selectedFriendId);
+  const badgeLabel = friends.length === 0 ? 'Add friend' : ready ? 'Play' : 'Pick friend';
+  const badgeClass =
+    friends.length === 0 ? 'soon-badge' : ready ? 'mp-badge' : 'mp-badge mp-badge-muted';
+
   return `
-    <button class="mp-card ${highlighted ? 'mp-highlight' : ''}" ${enabled ? `data-action="${action}"` : 'disabled'}>
+    <button class="mp-card ${ready ? 'mp-highlight' : ''}" type="button" data-action="coop-decide">
+      <div class="mp-card-top">
+        <strong>Co-op Decide</strong>
+        <span class="${badgeClass}">${badgeLabel}</span>
+      </div>
+      <p>Blind pin → reveal → vote on one final pin</p>
+      <span class="mp-meta">2 players · Live or async · Firebase sync</span>
+    </button>`;
+}
+
+function renderMpSoonCard(title: string, desc: string, meta: string): string {
+  return `
+    <button class="mp-card" type="button" disabled>
       <div class="mp-card-top">
         <strong>${title}</strong>
-        ${enabled ? '<span class="mp-badge">Play</span>' : '<span class="soon-badge">Soon</span>'}
+        <span class="soon-badge">Soon</span>
       </div>
       <p>${desc}</p>
       <span class="mp-meta">${meta}</span>
@@ -1241,10 +1275,6 @@ function patchMultiplayerPanel(): void {
 
   const friends = getFriends();
   const selectedId = state.coopSetupFriendId;
-  const coopReady =
-    friends.length > 0 &&
-    selectedId !== null &&
-    friends.some((f) => f.id === selectedId);
 
   const friendSection = panel.querySelector('[data-mp-friend-section]');
   if (friendSection) {
@@ -1254,9 +1284,9 @@ function patchMultiplayerPanel(): void {
   const grid = panel.querySelector('[data-mp-grid]');
   if (grid) {
     grid.innerHTML = `
-      ${renderMpCard('Co-op Decide', 'Blind pin → reveal → vote on one final pin', '2 players · Live or async', true, 'coop-decide', coopReady)}
-      ${renderMpCard('1v1 Duel', 'Same scene, closest guess wins the round', 'Best of 5 · Coming soon', false)}
-      ${renderMpCard('Battle Royale', '4–8 players, elimination rounds', 'Coming soon', false)}
+      ${renderCoopDecideCard(friends, selectedId)}
+      ${renderMpSoonCard('1v1 Duel', 'Same scene, closest guess wins the round', 'Best of 5 · Coming soon')}
+      ${renderMpSoonCard('Battle Royale', '4–8 players, elimination rounds', 'Coming soon')}
     `;
   }
 }
@@ -1479,8 +1509,107 @@ function refreshScoreboardCloud(): void {
   });
 }
 
+function getLibraryViewItems(): import('./types').PanoramaAsset[] {
+  return state.libraryReviewMode ? getPanoramasPendingReview() : getVisiblePanoramas();
+}
+
+function renderReportPanoramaButton(panoId: string): string {
+  const reported = hasUserReportedPanorama(panoId);
+  const label = reported ? '✓' : '⚠ Melden';
+  const title = reported ? 'Bereits gemeldet' : 'Fehlerhafte Szene melden';
+  return `<button type="button" class="pano-report-btn" data-action="report-pano" data-pano-id="${escapeHtml(panoId)}" ${reported ? 'disabled' : ''} aria-label="${title}" title="${title}">${label}</button>`;
+}
+
+async function handleReportPanorama(panoId: string): Promise<void> {
+  if (hasUserReportedPanorama(panoId)) {
+    await alertDialog('Du hast diese Szene bereits gemeldet.', 'Bereits gemeldet');
+    return;
+  }
+
+  const inActiveSoloRun =
+    Boolean(state.session) &&
+    !state.isCoopRun &&
+    state.screen === 'explore' &&
+    state.round?.panoramaId === panoId;
+
+  const ok = await confirmDialog(
+    inActiveSoloRun
+      ? 'Diese Szene melden und zur nächsten wechseln? Du verlierst kein Herz und bekommst keine Strafe.'
+      : 'Diese Szene melden? (z.B. defekt, falsche Location, kaputtes Bild)',
+    {
+      title: 'Szene melden',
+      confirmLabel: inActiveSoloRun ? 'Melden & weiter' : 'Melden',
+      cancelLabel: 'Abbrechen',
+    },
+  );
+  if (!ok) return;
+
+  await reportPanorama(panoId);
+
+  if (inActiveSoloRun) {
+    skipBrokenRoundAfterReport();
+    return;
+  }
+
+  await alertDialog('Danke — ein Admin prüft die Szene in der Panorama Library.', 'Gemeldet');
+  render();
+}
+
+function skipBrokenRoundAfterReport(): void {
+  if (!state.session || !state.mode || !state.round) return;
+
+  dismissRoundIntro();
+  dismissLevelUp();
+  state.lastXpAward = null;
+  state.lastRunXpAward = null;
+  state.inventoryOpen = false;
+  state.session.usedItemsThisRound = [];
+  state.session.activeHint = null;
+
+  const classicRegion = state.mode === 'classic' ? state.classicRegion : 'world';
+  let round = pickRound(state.mode, state.session.usedRoundIds, classicRegion);
+  if (!round) {
+    round = pickRound(state.mode, [], classicRegion);
+    if (round) state.session.usedRoundIds = [];
+  }
+  if (!round) {
+    void alertDialog(
+      'Keine alternative Szene verfügbar. Probiere es später nochmal.',
+      'Keine Szene',
+    ).then(() => goHome());
+    return;
+  }
+
+  if (!state.session.usedRoundIds.includes(round.id)) {
+    state.session.usedRoundIds.push(round.id);
+  }
+
+  state.round = round;
+  state.guess = null;
+  state.useMapillaryLive = Boolean(round.mapillaryLive && round.mapillaryImageId);
+  state.mapillaryImageId = round.mapillaryImageId ?? null;
+  if (!state.useMapillaryLive) {
+    state.mapillaryImageId = null;
+  }
+
+  markPanoramaSeen(round.panoramaId);
+  state.roundIntroOpen = false;
+  state.roundIntroRoundId = null;
+  state.screen = 'explore';
+  render();
+}
+
+function bindReportPanoramaEvents(): void {
+  app.querySelectorAll('[data-action="report-pano"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = (btn as HTMLElement).dataset.panoId;
+      if (id) void handleReportPanorama(id);
+    });
+  });
+}
+
 function resolveLibraryIndex(): number {
-  const items = getVisiblePanoramas();
+  const items = getLibraryViewItems();
   if (items.length === 0) return 0;
   if (state.libraryViewId) {
     const byId = items.findIndex((p) => p.id === state.libraryViewId);
@@ -1964,9 +2093,17 @@ function bindSocialEventsOnce(): void {
         promptForName();
         return;
       }
-      if (!state.coopSetupFriendId) {
-        showSocialToast('Pick a friend from your list first.');
+      const friends = getFriends();
+      if (friends.length === 0) {
+        state.playType = 'multiplayer';
+        setSocialOpen(true);
+        state.socialTab = 'add';
+        showSocialToast('Add your friend first — then send a Co-op invite.');
         return;
+      }
+      if (!state.coopSetupFriendId) {
+        state.coopSetupFriendId = friends[0]!.id;
+        patchMultiplayerPanel();
       }
       state.playType = 'multiplayer';
       setCoopSetupOpen(true, state.coopSetupFriendId);
@@ -2064,6 +2201,7 @@ function renderExplore(): string {
       ${state.useMapillaryLive ? '<div class="mapillary-live-banner">🌐 Mapillary Live — streaming via API</div>' : ''}
 
       <div id="pano" class="pano-container" aria-label="360 panorama — drag to look around"></div>
+      ${renderReportPanoramaButton(round.panoramaId)}
 
       <div class="explore-hud">
         <p class="explore-tip">${state.isCoopRun ? 'Co-op: your pin stays hidden until reveal' : 'Drag to look around · Pinch to zoom'}</p>
@@ -2168,6 +2306,7 @@ function renderResult(): string {
 
   return `
     <div class="screen screen-result">
+      ${renderReportPanoramaButton(round.panoramaId)}
       ${isDaily ? '<div class="daily-result-banner">📅 Daily ChronoPin complete!</div>' : ''}
       <div class="result-top">
         ${renderSessionHud()}
@@ -2261,9 +2400,14 @@ function renderGameOver(): string {
   `;
 }
 
-function renderLibraryListItem(p: import('./types').PanoramaAsset, globalIndex: number): string {
+function renderLibraryListItem(
+  p: import('./types').PanoramaAsset,
+  globalIndex: number,
+  options?: { hideLocality?: boolean },
+): string {
   const thumb = panoramaUrl(p);
   const thumbClass = p.mapillaryLive ? 'library-thumb library-thumb-live' : 'library-thumb';
+  const locality = getPanoramaLocality(p);
   return `
                 <li class="library-item${p.mapillaryLive ? ' library-item-live' : ''}" data-id="${p.id}" data-index="${globalIndex}">
                   ${
@@ -2274,7 +2418,7 @@ function renderLibraryListItem(p: import('./types').PanoramaAsset, globalIndex: 
                   <div class="library-meta">
                     <strong class="library-title">${p.title}</strong>
                     ${renderPanoramaBadges(p, { hideSource: true, compact: true })}
-                    <span class="library-region">${p.region}</span>
+                    ${options?.hideLocality ? '' : `<span class="library-region">${escapeHtml(locality)}</span>`}
                     <span class="library-tags">${p.modes.join(' · ')}${p.mapillaryLive ? ' · live stream' : ''}</span>
                     ${renderPanoramaDifficultyStars(p.id, { interactive: true, compact: true })}
                   </div>
@@ -2287,25 +2431,18 @@ function renderLibrary(): string {
   const trashed = getTrashedPanoramas();
   const groups = groupVisiblePanoramasBySource(items);
   const indexById = new Map(items.map((p, i) => [p.id, i]));
+  const reviewItems = getPanoramasPendingReview();
+  const pendingCount = getPendingReportCount();
+  const showReviewTab = isAdminPlayer();
+  const reviewIndexById = new Map(reviewItems.map((p, i) => [p.id, i]));
 
-  return `
-    <div class="screen screen-library">
-      <div class="library-header">
-        <button class="icon-btn" data-action="home" aria-label="Home">←</button>
-        <div>
-          <h2>Panorama Library</h2>
-          <p>${items.length} active · ${groups.length} sources · tap a tag to expand${isFirebaseConfigured() ? ' · ★ cloud' : ''}</p>
-        </div>
-        <button class="icon-btn library-map-btn" data-action="library-map" aria-label="World map" title="World map">🌍</button>
-      </div>
-
-      ${
-        items.length === 0
-          ? `<div class="library-empty">
+  const browseContent =
+    items.length === 0
+      ? `<div class="library-empty">
               <p>No active panoramas.</p>
               ${trashed.length > 0 ? `<button class="btn btn-secondary" data-action="restore-all-trash">Restore all from trash</button>` : ''}
             </div>`
-          : `<div class="library-groups">
+      : `<div class="library-groups">
               ${groups
                 .map((group) => {
                   const open = isLibraryGroupExpanded(group.key);
@@ -2327,25 +2464,120 @@ function renderLibrary(): string {
                   <span class="library-group-meta">${group.items.length} scene${group.items.length === 1 ? '' : 's'}${liveNote}</span>
                 </button>
                 <ul class="library-list library-group-list">
-                  ${group.items
-                    .map((p) => renderLibraryListItem(p, indexById.get(p.id) ?? 0))
+                  ${group.countries
+                    .map((countryGroup) => {
+                      const countryOpen = isLibraryCountryExpanded(group.key, countryGroup.key);
+                      return `
+                  <li class="library-subgroup${countryOpen ? ' open' : ''}">
+                    <button
+                      type="button"
+                      class="library-subgroup-header"
+                      data-action="toggle-library-country"
+                      data-source="${group.key}"
+                      data-country="${escapeHtml(countryGroup.key)}"
+                      aria-expanded="${countryOpen}"
+                    >
+                      <span class="library-group-chevron" aria-hidden="true">▸</span>
+                      <span class="library-country-label">${escapeHtml(countryGroup.label)}</span>
+                      <span class="library-group-meta">${countryGroup.items.length} scene${countryGroup.items.length === 1 ? '' : 's'}</span>
+                    </button>
+                    <ul class="library-list library-subgroup-list">
+                      ${countryGroup.items
+                        .map((p) =>
+                          renderLibraryListItem(p, indexById.get(p.id) ?? 0, { hideLocality: true }),
+                        )
+                        .join('')}
+                    </ul>
+                  </li>`;
+                    })
                     .join('')}
                 </ul>
               </section>`;
                 })
                 .join('')}
+            </div>`;
+
+  const reviewContent =
+    reviewItems.length === 0
+      ? `<div class="library-empty"><p>Keine gemeldeten Szenen zur Überprüfung.</p></div>`
+      : `<ul class="library-list library-review-list">
+          ${reviewItems
+            .map((p) => {
+              const report = getPanoramaReport(p.id);
+              const globalIndex = reviewIndexById.get(p.id) ?? 0;
+              const thumb = panoramaUrl(p);
+              const thumbClass = p.mapillaryLive ? 'library-thumb library-thumb-live' : 'library-thumb';
+              return `
+            <li class="library-item library-item-review${p.mapillaryLive ? ' library-item-live' : ''}" data-id="${p.id}" data-index="${globalIndex}" data-review="1">
+              ${
+                thumb
+                  ? `<img class="${thumbClass}" src="${thumb}" alt="${escapeHtml(p.title)}" loading="lazy" />`
+                  : `<div class="${thumbClass} library-thumb-placeholder" aria-hidden="true">🌐</div>`
+              }
+              <div class="library-meta">
+                <strong class="library-title">${p.title}</strong>
+                ${renderPanoramaBadges(p, { compact: true })}
+                <span class="library-region">${p.region}</span>
+                ${report ? `<span class="library-report-meta">${formatReportMeta(report)}</span>` : ''}
+              </div>
+              <span class="library-review-chevron" aria-hidden="true">›</span>
+            </li>`;
+            })
+            .join('')}
+        </ul>`;
+
+  return `
+    <div class="screen screen-library">
+      <div class="library-header">
+        <button class="icon-btn" data-action="home" aria-label="Home">←</button>
+        <div>
+          <h2>Panorama Library</h2>
+          <p>${items.length} active · ${groups.length} sources · tap to expand by country${isFirebaseConfigured() ? ' · ★ cloud' : ''}${showReviewTab && pendingCount > 0 ? ` · ${pendingCount} zur Prüfung` : ''}</p>
+        </div>
+        <button class="icon-btn library-map-btn" data-action="library-map" aria-label="World map" title="World map">🌍</button>
+      </div>
+
+      ${
+        showReviewTab
+          ? `<div class="library-tabs segmented" role="tablist" aria-label="Library sections">
+              <button type="button" class="segmented-btn ${state.libraryTab === 'browse' ? 'active' : ''}" data-action="library-tab" data-tab="browse" role="tab" aria-selected="${state.libraryTab === 'browse'}">Bibliothek</button>
+              <button type="button" class="segmented-btn ${state.libraryTab === 'review' ? 'active' : ''}" data-action="library-tab" data-tab="review" role="tab" aria-selected="${state.libraryTab === 'review'}">
+                Zur Überprüfung${pendingCount > 0 ? `<span class="social-tab-badge">${pendingCount}</span>` : ''}
+              </button>
             </div>`
+          : ''
+      }
+
+      ${
+        showReviewTab && state.libraryTab === 'review'
+          ? `<section class="library-review-section">
+              <p class="hint library-review-hint">Gemeldete Szenen prüfen — behalten oder in den Papierkorb legen.</p>
+              ${reviewContent}
+            </section>`
+          : browseContent
       }
 
       ${
         trashed.length > 0
-          ? `<section class="library-trash-section">
-              <h3 class="library-trash-title">🗑 Trash (${trashed.length})</h3>
-              <p class="hint">Removed scenes stay here until you restore them.</p>
-              <ul class="library-list library-trash-list">
-                ${trashed
-                  .map(
-                    (p) => `
+          ? (() => {
+              const trashOpen = isLibraryTrashExpanded();
+              return `<section class="library-group library-trash-section${trashOpen ? ' open' : ''}">
+              <button
+                type="button"
+                class="library-group-header library-trash-header"
+                data-action="toggle-library-trash"
+                aria-expanded="${trashOpen}"
+              >
+                <span class="library-group-chevron" aria-hidden="true">▸</span>
+                <span class="library-trash-label">🗑 Trash</span>
+                <span class="library-group-meta">${trashed.length} scene${trashed.length === 1 ? '' : 's'}</span>
+              </button>
+              <div class="library-trash-body">
+                <p class="hint library-trash-hint">Removed scenes stay here until you restore them.</p>
+                <ul class="library-list library-trash-list">
+                  ${trashed
+                    .map(
+                      (p) => `
                   <li class="library-item library-item-trash" data-id="${p.id}">
                     <div class="library-meta">
                       <strong>${p.title}</strong>
@@ -2353,11 +2585,13 @@ function renderLibrary(): string {
                     </div>
                     <button class="btn btn-secondary btn-sm" data-restore="${p.id}">Restore</button>
                   </li>`,
-                  )
-                  .join('')}
-              </ul>
-              <button class="btn btn-secondary library-restore" data-action="restore-all-trash">Restore all from trash</button>
-            </section>`
+                    )
+                    .join('')}
+                </ul>
+                <button class="btn btn-secondary library-restore" data-action="restore-all-trash">Restore all from trash</button>
+              </div>
+            </section>`;
+            })()
           : ''
       }
     </div>
@@ -2365,11 +2599,19 @@ function renderLibrary(): string {
 }
 
 function renderLibraryView(): string {
-  const items = getVisiblePanoramas();
+  const items = getLibraryViewItems();
   const idx = resolveLibraryIndex();
   state.libraryIndex = idx;
   const item = items[idx];
-  if (!item) return renderLibrary();
+  if (!item) {
+    if (state.libraryReviewMode) {
+      state.libraryTab = 'review';
+      state.libraryReviewMode = false;
+    }
+    return renderLibrary();
+  }
+
+  const report = state.libraryReviewMode ? getPanoramaReport(item.id) : null;
 
   return `
     <div class="screen screen-library-view">
@@ -2383,13 +2625,20 @@ function renderLibraryView(): string {
         <span class="library-nav-count">${idx + 1}/${items.length}</span>
       </div>
 
+      ${state.libraryReviewMode ? `<div class="library-review-banner">⚠ Zur Überprüfung${report ? ` · ${formatReportMeta(report)}` : ''}</div>` : ''}
+
       <div id="pano" class="pano-container" aria-label="360 preview"></div>
       ${item.mapillaryLive ? '<div class="mapillary-live-banner">🌐 Mapillary Live preview</div>' : ''}
 
       <div class="library-view-bar">
         <button class="btn btn-secondary" data-action="lib-prev" ${idx === 0 ? 'disabled' : ''}>← Prev</button>
-        ${item.mapillaryLive ? `<button class="btn btn-secondary" data-action="mapillary-refresh-one" data-id="${item.id}">↻ Refresh live</button>` : ''}
-        <button class="btn btn-secondary" data-action="lib-delete" data-id="${item.id}">Trash</button>
+        ${
+          state.libraryReviewMode
+            ? `<button class="btn btn-secondary" data-action="review-keep" data-id="${item.id}">Behalten</button>
+               <button class="btn btn-danger" data-action="review-trash" data-id="${item.id}">In Papierkorb</button>`
+            : `${item.mapillaryLive ? `<button class="btn btn-secondary" data-action="mapillary-refresh-one" data-id="${item.id}">↻ Refresh live</button>` : ''}
+               <button class="btn btn-secondary" data-action="lib-delete" data-id="${item.id}">Trash</button>`
+        }
         <button class="btn btn-secondary" data-action="lib-next" ${idx >= items.length - 1 ? 'disabled' : ''}>Next →</button>
       </div>
       <div class="library-view-difficulty">
@@ -2701,6 +2950,8 @@ function resetStateForLogin(): void {
     session: null,
     libraryIndex: 0,
     libraryViewId: null,
+    libraryTab: 'browse',
+    libraryReviewMode: false,
     scoreboardFilter: 'all',
     avatarConfig: getDefaultAvatarConfig(),
     avatarEditorOpenCategory: null,
@@ -3090,6 +3341,7 @@ function bindExploreEvents(): void {
     }
     render();
   });
+  bindReportPanoramaEvents();
 }
 
 function bindGuessEvents(): void {
@@ -3138,6 +3390,7 @@ function bindResultEvents(): void {
       showGameOver();
     }
   });
+  bindReportPanoramaEvents();
 }
 
 function finishRunEarly(): void {
@@ -3207,6 +3460,12 @@ function bindLibraryEvents(): void {
     if (changed && state.screen === 'library') render();
   });
 
+  if (isAdminPlayer()) {
+    void syncPanoramaReportsFromCloud().then((changed) => {
+      if (changed && state.screen === 'library') render();
+    });
+  }
+
   void hydrateMapillaryLibraryThumbs();
 
   app.querySelector('[data-action="library-map"]')?.addEventListener('click', () => {
@@ -3215,6 +3474,16 @@ function bindLibraryEvents(): void {
   });
 
   bindPanoramaRatingEvents();
+
+  app.querySelectorAll('[data-action="library-tab"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = (btn as HTMLElement).dataset.tab as 'browse' | 'review';
+      if (tab) {
+        state.libraryTab = tab;
+        render();
+      }
+    });
+  });
 
   app.querySelectorAll('[data-action="toggle-library-group"]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -3226,14 +3495,37 @@ function bindLibraryEvents(): void {
     });
   });
 
+  app.querySelectorAll('[data-action="toggle-library-trash"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleLibraryTrashExpanded();
+      render();
+    });
+  });
+
+  app.querySelectorAll('[data-action="toggle-library-country"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const el = btn as HTMLElement;
+      const source = el.dataset.source as import('./types').PanoramaSource;
+      const country = el.dataset.country;
+      if (source && country) toggleLibraryCountryExpanded(source, country);
+      render();
+    });
+  });
+
   app.querySelectorAll('.library-item:not(.library-item-trash)').forEach((item) => {
     item.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('[data-delete], [data-pano-rating], .pano-difficulty')) return;
       const id = (item as HTMLElement).dataset.id;
+      const isReview = (item as HTMLElement).dataset.review === '1';
       if (id) markPanoramaSeen(id);
       const index = Number((item as HTMLElement).dataset.index);
       state.libraryIndex = index;
       state.libraryViewId = id ?? null;
+      state.libraryReviewMode = isReview;
       state.screen = 'library-view';
       render();
     });
@@ -3278,7 +3570,7 @@ function bindLibraryMapEvents(): void {
 }
 
 function bindLibraryViewEvents(): void {
-  const items = getVisiblePanoramas();
+  const items = getLibraryViewItems();
   const item = items[state.libraryIndex];
   if (item) markPanoramaSeen(item.id);
 
@@ -3289,6 +3581,8 @@ function bindLibraryViewEvents(): void {
   bindPanoramaRatingEvents();
 
   app.querySelector('[data-action="library-back"]')?.addEventListener('click', () => {
+    if (state.libraryReviewMode) state.libraryTab = 'review';
+    state.libraryReviewMode = false;
     state.screen = 'library';
     render();
   });
@@ -3296,7 +3590,7 @@ function bindLibraryViewEvents(): void {
   app.querySelector('[data-action="lib-prev"]')?.addEventListener('click', () => {
     if (state.libraryIndex > 0) {
       state.libraryIndex--;
-      const items = getVisiblePanoramas();
+      const items = getLibraryViewItems();
       state.libraryViewId = items[state.libraryIndex]?.id ?? null;
       if (state.libraryViewId) markPanoramaSeen(state.libraryViewId);
       render();
@@ -3304,7 +3598,7 @@ function bindLibraryViewEvents(): void {
   });
 
   app.querySelector('[data-action="lib-next"]')?.addEventListener('click', () => {
-    const items = getVisiblePanoramas();
+    const items = getLibraryViewItems();
     const max = items.length - 1;
     if (state.libraryIndex < max) {
       state.libraryIndex++;
@@ -3312,6 +3606,61 @@ function bindLibraryViewEvents(): void {
       if (state.libraryViewId) markPanoramaSeen(state.libraryViewId);
       render();
     }
+  });
+
+  app.querySelector('[data-action="review-keep"]')?.addEventListener('click', () => {
+    const id = (app.querySelector('[data-action="review-keep"]') as HTMLElement).dataset.id;
+    if (!id) return;
+    void (async () => {
+      const ok = await confirmDialog('Szene behalten und Meldung schließen?', {
+        title: 'Behalten',
+        confirmLabel: 'Behalten',
+        cancelLabel: 'Abbrechen',
+      });
+      if (!ok) return;
+      await keepReportedPanorama(id);
+      const remaining = getPanoramasPendingReview();
+      if (remaining.length === 0) {
+        state.libraryReviewMode = false;
+        state.libraryTab = 'review';
+        state.screen = 'library';
+      } else if (state.libraryIndex >= remaining.length) {
+        state.libraryIndex = remaining.length - 1;
+        state.libraryViewId = remaining[state.libraryIndex]?.id ?? null;
+      } else {
+        state.libraryViewId = remaining[state.libraryIndex]?.id ?? null;
+      }
+      render();
+    })();
+  });
+
+  app.querySelector('[data-action="review-trash"]')?.addEventListener('click', () => {
+    const id = (app.querySelector('[data-action="review-trash"]') as HTMLElement).dataset.id;
+    if (!id) return;
+    void (async () => {
+      const ok = await confirmDialog('Szene in den Papierkorb legen?', {
+        title: 'In Papierkorb',
+        confirmLabel: 'In Papierkorb',
+        cancelLabel: 'Abbrechen',
+        danger: true,
+      });
+      if (!ok) return;
+      await trashReportedPanorama(id);
+      const remaining = getPanoramasPendingReview();
+      state.libraryReviewMode = remaining.length > 0;
+      if (remaining.length === 0) {
+        state.libraryTab = 'review';
+        state.screen = 'library';
+      } else if (state.libraryIndex >= remaining.length) {
+        state.libraryIndex = remaining.length - 1;
+        state.libraryViewId = remaining[state.libraryIndex]?.id ?? null;
+        state.screen = 'library-view';
+      } else {
+        state.libraryViewId = remaining[state.libraryIndex]?.id ?? null;
+        state.screen = 'library-view';
+      }
+      render();
+    })();
   });
 
   app.querySelector('[data-action="lib-delete"]')?.addEventListener('click', () => {
@@ -3979,6 +4328,8 @@ function goHome(): void {
     session: null,
     libraryIndex: 0,
     libraryViewId: null,
+    libraryTab: 'browse',
+    libraryReviewMode: false,
     scoreboardFilter: state.scoreboardFilter,
     avatarConfig: getProfile()?.avatarConfig ?? getDefaultAvatarConfig(),
     avatarEditorOpenCategory: null,
@@ -4039,11 +4390,12 @@ function getActivePanoSource(): { panorama: string; panoConfig?: Round['panoConf
   return { panorama: round.panorama, panoConfig: round.panoConfig };
 }
 
-function initPanorama(): void {
+function initPanorama(initToken = panoInitToken): void {
   const src = getActivePanoSource();
-  if (!src.panorama) return;
-  const token = ++panoInitToken;
-  destroyPanorama();
+  if (!src.panorama) {
+    if (initToken === panoInitToken) hidePanoLoading();
+    return;
+  }
 
   const config: Record<string, unknown> = {
     type: 'equirectangular',
@@ -4060,9 +4412,15 @@ function initPanorama(): void {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const validScreens: Screen[] = ['explore', 'library-view'];
-      if (token !== panoInitToken || !validScreens.includes(state.screen)) return;
+      if (initToken !== panoInitToken || !validScreens.includes(state.screen)) return;
       if (!document.getElementById('pano')) return;
       panoViewer = pannellum.viewer('pano', config);
+      panoViewer.on('load', () => {
+        if (initToken === panoInitToken) hidePanoLoading();
+      });
+      panoViewer.on('error', () => {
+        if (initToken === panoInitToken) hidePanoLoading();
+      });
     });
   });
 }
@@ -4070,18 +4428,20 @@ function initPanorama(): void {
 async function initPanoramaViewer(): Promise<void> {
   const token = ++panoInitToken;
   destroyPanorama();
+  showPanoLoading();
 
   let imageId: string | null = null;
 
   if (state.useMapillaryLive && state.mapillaryImageId) {
     imageId = state.mapillaryImageId;
   } else if (state.screen === 'library-view') {
-    const items = getVisiblePanoramas();
+    const items = getLibraryViewItems();
     const item = items[resolveLibraryIndex()];
     if (item?.mapillaryLive) {
       imageId = getMapillaryLiveImageId(item.id);
       if (!imageId) {
         const entry = await ensureMapillaryAssetResolved(item.id);
+        if (token !== panoInitToken) return;
         imageId = entry?.imageId ?? null;
       }
     }
@@ -4089,9 +4449,12 @@ async function initPanoramaViewer(): Promise<void> {
 
   if (imageId) {
     try {
-      await mountMapillaryViewer('pano', imageId);
+      await mountMapillaryViewer('pano', imageId, () => {
+        if (token === panoInitToken) hidePanoLoading();
+      });
     } catch (err) {
       if (token !== panoInitToken) return;
+      hidePanoLoading();
       console.error('Mapillary viewer failed:', err);
       void alertDialog(
         err instanceof Error ? err.message : 'Could not load Mapillary panorama',
@@ -4101,7 +4464,7 @@ async function initPanoramaViewer(): Promise<void> {
     return;
   }
 
-  initPanorama();
+  initPanorama(token);
 }
 
 function initGuessMap(): void {
@@ -4331,10 +4694,15 @@ function addCoopMapPin(
   mountMapPinMarker(el);
 }
 
-function destroyPanorama(): void {
+function destroyPanoramaInternals(): void {
   panoViewer?.destroy();
   panoViewer = null;
   destroyMapillaryViewer();
+}
+
+function destroyPanorama(): void {
+  hidePanoLoading();
+  destroyPanoramaInternals();
 }
 
 function destroyMap(): void {
