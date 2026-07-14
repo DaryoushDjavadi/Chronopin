@@ -4,10 +4,105 @@
 
 Guess **where** you are. In time modes, also guess **when**.
 
-**Status:** Expo / React Native **boilerplate only**. Features below are the product plan — not shipped yet.
+**Status:** **Web-Prototyp spielbar** (`web/`) · Expo / React Native **noch Boilerplate**. Store-App = später.
 
 **Repo:** https://github.com/DaryoushDjavadi/Chronopin  
 **Owner:** Daryoush Djavadi · commercial goal ~€1–2 one-time purchase (cover Apple/Google developer fees, not get rich)
+
+---
+
+## Zuletzt umgesetzt & Roadmap *(schnell nachschlagen)*
+
+> Stand: Juli 2026 · Web-Prototyp unter [`web/`](./web/) — `cd web && npm run dev`
+
+### Kürzlich umgesetzt (letzte Sessions)
+
+**Spiel & Content**
+- Web-Prototyp (Vite + TS, mobile-first): Explore → Guess → Result → Game Over
+- **29 Panoramen** weltweit (Wikimedia CC), 18 mit **`new`-Badge** in der Bibliothek
+- 3 Herzen pro Run, Scoring (Distanz + Jahr), lokales Scoreboard & Stats
+- Panorama-Bibliothek: browse, 360°-Preview, lokal ausblenden/wiederherstellen
+
+**Character & Avatar**
+- Pixel-Avatar-Editor (**Universal LPC**): Skin, Haare, Kopfbedeckung, Top, Hosen, Schuhe
+- **Male / Female** Körpertyp
+- **Color Picker** für Top, Hosen, Schuhe (freie Hex-Farben)
+- **Reset** + **🎲 Random** im Editor
+- **Idle-Animation** (Menü/Editor) · **Walk-Animation** (Avatar-Button im Spiel)
+
+**Inventar**
+- 3×3-Inventar (Pixel-Stil): Fernglas, North Star + Platzhalter (Compass, Map, Time Shard)
+- 1× Nutzung pro Item pro Runde · Hinweis-Banner im Spiel
+- Schließen (×), Hover-Tooltips, Styling wie Hauptmenü
+
+**Social (Demo / Mock)**
+- **👥 Friends-Button** neben Name & Avatar im Home
+- Freundesliste · Freunde hinzufügen · Anfragen annehmen/ablehnen
+- Test-Freund **Max Mustermann** (wechselt Online/Offline), Stats, Chat
+- Offene Demo-Anfrage von **Lena Vogt**
+
+**Sonstiges**
+- Landmarks für Fernglas-Hinweise (global erweitert)
+- Player Info: Stats, Avatar bearbeiten, Mitglied-seit-Datum
+
+### Bekannte Lücken / Bugs (noch offen)
+
+- Map/Pano-Lifecycle bei Screen-Wechsel (Explore ↔ Guess) — Memory-Leak-Risiko
+- Freund annehmen (Lena) fügt sie noch nicht zur Liste hinzu
+- UI Englisch, Zahlen `de-DE`, `lang="de"` — inkonsistent
+- `alert()` / `confirm()` statt In-App-Feedback
+- Keine Loading-States für Panorama/Karte
+- Multiplayer nur UI-Preview · Firebase/Sync noch nicht angebunden
+
+---
+
+### Ideen für die Zukunft
+
+**Gameplay & Modi**
+- **Daily ChronoPin** — eine Runde pro Tag für alle (Wordle-Style)
+- **Themen-Packs** — z.B. nur Asien, Brücken, Nacht-Szenen, Before 1950
+- **Lightning Round** — kurze Panorama-Zeit, höhere Punkte
+- **Streak / Hardcore** — Endless oder 1 Herz, doppelte Punkte
+- **Story Runs** — 5 Runden mit Narrative (z.B. „Silk Road“)
+- **Chrono Clues** — explizit Jahrzehnt aus Architektur/Mode/Technik lesen
+
+**Inventar (Platzhalter aktivieren)**
+- Compass → Richtung zum Ziel
+- Pocket Map → Kontinent/Region einfärben
+- Time Shard → Jahr enger eingrenzen (Past/Future)
+
+**Social & Multiplayer**
+- **Async Duell** — gleiche Szene, wer näher war gewinnt (ohne Live-Sync)
+- **Party Code** — 4–8 Spieler, gleicher Seed, zeitlich begrenzt
+- Co-op Decide & 1v1 Duel (wie im Plan unten) mit Firebase/Supabase
+- Freunde auf der Weltkarte (letzte Region / Online-Status)
+
+**Meta & Motivation**
+- **Region Mastery** — Meisterschaft pro Kontinent + Titel/Badge
+- **Achievements** — First Africa, ±50 km, ohne Items, …
+- **Chrono Journal** — Postkarten-Sammelalbum pro Runde (Thumb + Fun Fact)
+- Avatar sichtbarer im Spiel (Pin-Drop, Celebration, Game Over)
+
+**QoL & Polish**
+- Einheitliche **Sprache** (DE oder EN + i18n)
+- **In-App Toasts/Confirms** statt Browser-Dialoge
+- **Loading / Error** für Panorama & MapLibre
+- Spielregeln kurz im UI („>1.500 km oder >80 Jahre = Herz verloren“)
+- Modal-A11y: Escape, Focus-Trap, `prefers-reduced-motion`
+- MapLibre **lazy load** · kleinerer Bundle
+- Library als **Labs** für Dev, nicht im Player-Hauptmenü
+
+**Technik & Release**
+- Expo/React Native Port des Kernloops
+- Firebase: Profile, Scoreboard, Social, Rooms
+- Offline-Pack für Flugmodus
+- Push: Daily Reminder (optional)
+- Tests für Scoring, Avatar-Config, Round-Picker
+
+**Dokumentation**
+- [`web/README.md`](./web/README.md) — Prototyp starten & Stack
+- [`docs/WEB_PROTOTYPE.md`](./docs/WEB_PROTOTYPE.md) — Architektur, localStorage, bekannte Bugs
+- [`docs/TECH_AND_RIGHTS.md`](./docs/TECH_AND_RIGHTS.md) — Lizenzen & kommerzielle Rechte
 
 ---
 
@@ -35,7 +130,7 @@ If you land in a **new chat** on this repo, treat the following as source of tru
 - Details: [`docs/TECH_AND_RIGHTS.md`](./docs/TECH_AND_RIGHTS.md)
 
 ### V1 scope (keep small)
-1. Solo Classic + tiny Past pack  
+1. Solo Classic + tiny Past pack — **web prototype validates loop** ([`web/`](./web/))  
 2. Then Co-op Decide (2 players, room code)  
 3. Then 1v1  
 4. Future pack · Daily  
@@ -51,6 +146,7 @@ If you land in a **new chat** on this repo, treat the following as source of tru
 
 ### How to work with the user
 - User communicates mainly in **German**; code/comments/docs can stay English unless asked otherwise.
+- **Web prototype** is the current playable demo — see [`docs/WEB_PROTOTYPE.md`](./docs/WEB_PROTOTYPE.md) and roadmap in [`README.md`](./README.md#zuletzt-umgesetzt--roadmap-schnell-nachschlagen).
 - Do not expand scope without asking.
 - Prefer planning docs + small increments over big unimplemented frameworks.
 - This project started in conversation while an agent was attached to another repo (`Sphere_Visualization`). **Chronopin is the real app repo** — keep work here.
@@ -149,13 +245,14 @@ Party mode once Co-op + Duel feel solid:
 
 ## Tech (early)
 
-- Expo + TypeScript
+- **Now:** Vite web prototype ([`web/`](./web/), [`docs/WEB_PROTOTYPE.md`](./docs/WEB_PROTOTYPE.md))
+- **Later:** Expo + TypeScript (mobile store app)
 - Online rooms later (e.g. Firebase) for co-op / duel
 - Map provider: prefer OpenStreetMap / MapLibre / MapTiler / Mapbox — **not Google** as core
 - Classic imagery: curated packs you own/license first; optional Mapillary / Panoramax later
 - Past / Future: offline AI generation pipeline, assets hosted by us
 
-**Deep dive (licensing, Street View alternatives, AI pipeline):** see [`docs/TECH_AND_RIGHTS.md`](./docs/TECH_AND_RIGHTS.md).
+**Deep dive (licensing, Street View alternatives, AI pipeline, bundled web assets):** see [`docs/TECH_AND_RIGHTS.md`](./docs/TECH_AND_RIGHTS.md).
 
 ---
 

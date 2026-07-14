@@ -3,7 +3,44 @@
 Working notes for shipping a **paid** app where we actually have the right to use the assets.
 Not legal advice — verify licenses before release.
 
-**Product overview:** [`README.md`](../README.md)
+**Product overview:** [`README.md`](../README.md)  
+**Web prototype (technical):** [`WEB_PROTOTYPE.md`](./WEB_PROTOTYPE.md)
+
+---
+
+## Web prototype — current bundled assets
+
+The playable demo in [`web/`](../web/) uses only assets we can document and attribute. Before App Store release, re-verify each license.
+
+### Panoramas (Classic mode test content)
+
+- **29 equirectangular JPGs** in `web/public/panoramas/`
+- Source: **Wikimedia Commons** (CC BY-SA 3.0 / 4.0 and similar — per-file in [`web/public/panoramas/LICENSE.md`](../web/public/panoramas/LICENSE.md))
+- Downloaded via Wikimedia `Special:FilePath?width=1536` (scaled, not full resolution)
+- **Commercial use:** CC BY-SA generally allows commercial use **with attribution and ShareAlike on derivatives** — confirm per file; keep attribution in-app and in repo
+- **Not for final product volume alone** — curated/owned packs or Mapillary (see below) remain the commercial Classic strategy; Wikimedia is fine for **prototype / dev testing**
+
+### Avatar sprites (Universal LPC)
+
+- Subset in `web/public/avatar/lpc/` — walk animation sheets (male + female)
+- Source: [Universal LPC Spritesheet Character Generator](https://github.com/LiberatedPixelCup/Universal-LPC-Spritesheet-Character-Generator)
+- Licenses: **CC-BY-SA 3.0**, **GPL 3.0**, **OGA-BY 3.0** (per layer — see [`web/public/avatar/lpc/LICENSE.md`](../web/public/avatar/lpc/LICENSE.md) and upstream CREDITS.csv)
+- **Before paid launch:** audit CREDITS.csv; prefer CC0/OGA-BY layers where possible; show in-app credits (editor footer links to LPC)
+- ShareAlike may affect **redistributing modified sprite sheets** — document what you ship
+
+### Maps & 360 viewer (runtime, not stored)
+
+| Service | Use | Notes |
+|---|---|---|
+| **OpenFreeMap** + MapLibre | Guess/result pin map | OSM-based; show attribution |
+| **Pannellum** (jsDelivr CDN) | 360° panorama viewer | MIT license; CDN script in `index.html` |
+| **Google Fonts** | DM Sans, JetBrains Mono, Press Start 2P | SIL Open Font License |
+
+### Web prototype — not production-ready for rights
+
+- Past/Future rounds use **placeholder years** on Classic panoramas (no separate AI assets yet)
+- Social, multiplayer, Firebase = **mock UI only**
+- No Mapillary / live street API integration yet
 
 ---
 
@@ -67,6 +104,33 @@ Always show required attribution (© OpenStreetMap contributors, etc.).
 ### Practical Classic V1
 Ship **curated packs** first (rights you control).  
 Optionally add Mapillary/Panoramax later as "Explore" if ToS still fits a paid app.
+
+### Recommended third-party source (Classic expansion)
+
+**Primary pick: [Mapillary](https://www.mapillary.com/)** (Meta)
+
+Best balance for an indie commercial game that needs *more than Europe* without a Google deal:
+
+| | Mapillary | KartaView | Panoramax |
+|---|---|---|---|
+| Global coverage | Good (crowdsourced) | Weaker | EU-focused |
+| 360° imagery | Yes (API prefers 360) | Some | Growing |
+| Commercial use | Allowed with **Section 12** extra terms | CC BY-SA + ToS | Instance-dependent |
+| Integration | **MapillaryJS** viewer + Graph API v4 | API available | FOSS-friendly |
+| Cost | Free tier / API access token | Free | Free |
+| Risks | Meta ToS changes; must not re-host raw tiles; blur faces/plates; register app | ShareAlike; thinner coverage | Less global |
+
+**What to do before shipping Classic on Mapillary:**
+1. Register app at [Mapillary Developer](https://www.mapillary.com/developer) → `client_id` / token  
+2. Read [Terms §12 Commercial](https://www.mapillary.com/terms) — app must *supplement* Mapillary, not just rehost  
+3. Use **MapillaryJS** for viewing (not downloading & caching panos on your CDN long-term without permission)  
+4. Show Mapillary + contributor attribution in-app  
+5. User imagery is often **CC BY-SA** — document in `license_record`  
+6. Email Mapillary (vendor@meta.com) if unsure about game use case  
+
+**Fallback / supplement:** own curated CDN packs for flagship rounds; Mapillary for “Explore” volume.
+
+**Not recommended as core:** Google Street View (see above).
 
 ---
 
@@ -133,7 +197,8 @@ Multiplayer (co-op decide, 1v1) only syncs **guesses / pins / votes**, not heavy
 ---
 
 ## Suggested build order (rights-first)
-1. Solo Classic with **owned/curated** static rounds + OSM map  
+0. **Done:** Web prototype with Wikimedia Classic pack + LPC avatars ([`web/`](../web/), [`WEB_PROTOTYPE.md`](./WEB_PROTOTYPE.md))  
+1. Solo Classic with **owned/curated** static rounds + OSM map (replace/expand Wikimedia test set for store)  
 2. Past pack via AI pipeline + in-app “AI reconstruction” label  
 3. Co-op Decide + 1v1 (room codes)  
 4. Future pack  
@@ -142,5 +207,7 @@ Multiplayer (co-op decide, 1v1) only syncs **guesses / pins / votes**, not heavy
 
 ---
 
-## Repo / access note
-Push from this agent requires the **Cursor GitHub App** to have write access to `DaryoushDjavadi/Chronopin` (currently install appears limited to other repos).
+## Repo / access
+
+Remote: https://github.com/DaryoushDjavadi/Chronopin  
+Push requires git credentials or Cursor GitHub App with write access to this repo.

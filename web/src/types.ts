@@ -1,13 +1,18 @@
+import type { AvatarCategory, AvatarConfig } from './data/lpc-catalog';
+
 export type GameMode = 'classic' | 'past' | 'future';
 export type PlayType = 'solo' | 'multiplayer';
 export type Screen =
+  | 'onboarding'
   | 'home'
   | 'explore'
   | 'guess'
   | 'result'
   | 'gameover'
   | 'library'
-  | 'library-view';
+  | 'library-view'
+  | 'scoreboard'
+  | 'player-info';
 
 export interface PanoConfig {
   haov?: number;
@@ -31,6 +36,8 @@ export interface PanoramaAsset {
   attribution: string;
   license: string;
   isAiGenerated?: boolean;
+  /** Show "new" badge in panorama library */
+  isNew?: boolean;
 }
 
 export interface RoundAnswer {
@@ -67,6 +74,8 @@ export interface GameSession {
   usedRoundIds: string[];
   lastLostHeart: boolean;
   lastRoundPoints: number;
+  usedItemsThisRound: string[];
+  activeHint: { itemId: string; text: string } | null;
 }
 
 export interface AppState {
@@ -78,6 +87,16 @@ export interface AppState {
   session: GameSession | null;
   libraryIndex: number;
   libraryViewId: string | null;
+  scoreboardFilter: GameMode | 'all';
+  avatarConfig: AvatarConfig;
+  avatarEditorOpenCategory: AvatarCategory | null;
+  inventoryOpen: boolean;
+  socialOpen: boolean;
+  socialTab: 'friends' | 'add';
+  socialView: 'list' | 'friend';
+  socialSelectedFriendId: string | null;
+  socialMessageDraft: string;
+  socialToast: string | null;
 }
 
 export interface ScoreResult {
