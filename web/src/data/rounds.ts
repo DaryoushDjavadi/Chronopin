@@ -1,8 +1,36 @@
 import { getVisiblePanoramas, panoramaUrl } from '../lib/library';
+import {
+  getMapillaryLiveCacheEntry,
+  getMapillaryLiveImageId,
+  isMapillaryLiveGameplayEnabled,
+} from '../lib/mapillary-live-catalog';
 import { filterPanoramasForClassicRegion } from '../lib/classic-regions';
 import type { ClassicRegionFilter, GameMode, PanoramaAsset, Round } from '../types';
 
-function assetToRound(asset: PanoramaAsset, mode: GameMode): Round {
+function assetToRound(asset: PanoramaAsset, mode: GameMode): Round | null {
+  if (asset.mapillaryLive) {
+    if (!isMapillaryLiveGameplayEnabled()) return null;
+    const cached = getMapillaryLiveCacheEntry(asset.id);
+    const imageId = getMapillaryLiveImageId(asset.id);
+    if (!imageId) return null;
+    const lat = cached?.lat ?? asset.lat;
+    const lng = cached?.lng ?? asset.lng;
+    const label = `${asset.title}, ${asset.region.split(',')[0]}`;
+    return {
+      id: `${asset.id}-${mode}`,
+      panoramaId: asset.id,
+      modes: ['classic'],
+      title: asset.title,
+      panorama: '',
+      answer: { lat, lng, label },
+      context: asset.context,
+      attribution: asset.attribution,
+      license: asset.license,
+      mapillaryLive: true,
+      mapillaryImageId: imageId,
+    };
+  }
+
   const label = `${asset.title}, ${asset.region.split(',')[0]}`;
   const year =
     mode === 'past'
@@ -44,7 +72,7 @@ export function getRoundPool(mode: GameMode, classicRegion: ClassicRegionFilter 
   if (mode === 'classic' && classicRegion !== 'world') {
     panos = filterPanoramasForClassicRegion(panos, classicRegion);
   }
-  return panos.map((p) => assetToRound(p, mode));
+  return panos.map((p) => assetToRound(p, mode)).filter((r): r is Round => r != null);
 }
 
 export function pickRound(

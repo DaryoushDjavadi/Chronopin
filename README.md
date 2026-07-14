@@ -19,9 +19,12 @@ Guess **where** you are. In time modes, also guess **when**.
 
 **Spiel & Content**
 - Web-Prototyp (Vite + TS, mobile-first): Login → Home → Explore → Guess → Result
-- **44 Panoramen** (Wikimedia + Panoramax), Anbieter-Tags, **`new`-Badge**
+- **83 statische Panoramen** (Wikimedia, Panoramax, KartaView) + optional **61 Mapillary Live** (API-Stream, kein JPG)
+- Panorama-Bibliothek: **aufklappbare Gruppen** nach Quelle (Wikimedia / Panoramax / Mapillary / KartaView), Anbieter-Tags, **`new`-Badge**
+- **Schwierigkeits-Sterne** (1–3★) pro Szene — lokal + **Firestore-Sync** (`panoramaRatings`)
+- **Mapillary Live** — Home → 🌐: Library ON/OFF, optional in Gameplay, Refresh, Zufalls-Runde (Token: `VITE_MAPILLARY_ACCESS_TOKEN`)
 - **Classic-Region**, **Daily ChronoPin** + Glücksrad, **Stash**, 3 Herzen pro Run
-- Panorama-Bibliothek: Preview, **Papierkorb**, **Weltkarte** (Trash ausgeschlossen)
+- Panorama-Bibliothek: 360°-Preview (Pannellum + MapillaryJS), **Papierkorb**, **Weltkarte** (Trash ausgeschlossen)
 - Pixel-Avatar-Editor (LPC), ChronoPin-Logo, Credits-Overlay
 
 **Login & Account**
@@ -144,7 +147,7 @@ If you land in a **new chat** on this repo, treat the following as source of tru
 ### Commercial / rights constraints (non-negotiable)
 - App will be **sold**; we need assets we are allowed to use commercially.
 - **Do not** build the core product on scraped / bulk Google Street View. GeoGuessr has a Google deal; we do not.
-- Classic V1: **curated / owned / clearly licensed** static packs hosted by us. Optional later: Mapillary / Panoramax / KartaView if ToS fits.
+- Classic V1: **curated / owned / clearly licensed** static packs hosted by us. **Prototype:** Wikimedia + Panoramax + KartaView JPGs; **Mapillary Live** via API (MapillaryJS) when token configured — verify ToS before store.
 - Past / Future: **offline AI generation pipeline** → QA → host on our CDN. Prefer API terms that allow commercial use of outputs. Label AI content in-app.
 - Guess map: MapLibre + OSM / MapTiler / Mapbox — **not Google as default**.
 - Details: [`docs/TECH_AND_RIGHTS.md`](./docs/TECH_AND_RIGHTS.md)

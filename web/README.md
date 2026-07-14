@@ -108,13 +108,35 @@ Requires deployed Firestore rules with `isAdminUser()`.
 
 ## Panorama Library
 
-- Browse **44 scenes** (Wikimedia + Panoramax), 360° preview
+- **83 static scenes** (Wikimedia + Panoramax + KartaView) under `web/public/panoramas/`
+- **Collapsible groups** by source tag — tap **wikimedia**, **panoramax**, **mapillary**, or **kartaview** to expand/collapse (state saved in `localStorage`)
+- **Difficulty stars** (1–3★) per scene — local cache + Firestore `panoramaRatings` when signed in
 - **Trash** — hidden from gameplay and world map
 - **🌍 World map** — active scenes only (trash excluded)
+- 360° preview: Pannellum (static JPGs) · MapillaryJS (live stream entries)
+
+### Mapillary Live (optional)
+
+Requires `VITE_MAPILLARY_ACCESS_TOKEN` in `web/.env` (free client token from [Mapillary Developer](https://www.mapillary.com/developer)).
+
+Home → **Mapillary Live** → settings overlay:
+
+| Toggle | Effect |
+|---|---|
+| **Library** | 61 city seed spots appear in library (streamed via API, thumbnails cached locally) |
+| **Gameplay** | Live panos can appear in solo rounds (off by default) |
+
+Also: refresh all previews, open library, play random live round.
+
+**Modules:** `lib/mapillary-api.ts`, `lib/mapillary-viewer.ts`, `lib/mapillary-live-catalog.ts`, `lib/mapillary-live-ui.ts` · seeds: `data/mapillary-live-spots.ts`
+
+### Import more panoramas
 
 ```bash
 npm run import:panos -- --source panoramax
-npm run import:panos -- --source mapillary   # needs MAPILLARY_ACCESS_TOKEN
+npm run import:panos -- --source panoramax --merge --only berlin,paris
+npm run import:panos -- --source mapillary --merge   # needs MAPILLARY_ACCESS_TOKEN
+npm run test:mapillary                               # smoke-test API token
 ```
 
 ## Firebase setup (`chronopin-2bdce`)
@@ -143,6 +165,7 @@ npx -y firebase-tools@latest deploy --only firestore
 | `coopRooms/{roomId}/messages` | In-match chat |
 | `coopInvites/{id}` | Pending game invites |
 | `scoreboard/{searchName_mode}` | Global best scores |
+| `panoramaRatings/{panoId}` | Shared difficulty rating (1–3★) per library scene |
 
 Modules: `src/lib/firebase*.ts`, `src/lib/login.ts`, `src/lib/admin*.ts`
 
@@ -166,6 +189,12 @@ src/
 ├── lib/admin-ui.ts         # Admin overlay
 ├── lib/firebase-admin.ts   # Admin cloud actions
 ├── lib/progression.ts       # XP, levels, badges
+├── lib/pano-ratings.ts       # Local difficulty cache + sync
+├── lib/firebase-pano-ratings.ts
+├── lib/mapillary-api.ts      # Mapillary Graph API lookup
+├── lib/mapillary-viewer.ts   # MapillaryJS lazy viewer
+├── lib/mapillary-live-catalog.ts  # Live prefs, cache, library assets
+├── lib/mapillary-live-ui.ts  # Mapillary settings overlay
 ├── lib/round-intro-ui.ts    # Round-start overlay
 ├── lib/credits-ui.ts        # Attributes / Credits overlay
 ├── lib/coop-ui.ts           # Co-op + multiplayer UI
@@ -182,7 +211,7 @@ Full architecture: [`../docs/WEB_PROTOTYPE.md`](../docs/WEB_PROTOTYPE.md)
 ## Stack
 
 - Vite 6 + TypeScript
-- Pannellum (360°, CDN) · MapLibre + OpenFreeMap
+- Pannellum (360°, CDN) · MapillaryJS (live stream) · MapLibre + OpenFreeMap
 - Universal LPC avatars (canvas compositor)
 - Firebase Auth (anonymous) + Firestore when configured
 - Persistence: `localStorage` + cloud sync

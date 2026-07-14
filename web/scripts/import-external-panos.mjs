@@ -3,7 +3,7 @@
  * Import street-level 360° panoramas from Panoramax, Mapillary, and KartaView.
  *
  * Usage:
- *   node scripts/import-external-panos.mjs [--source panoramax|mapillary|kartaview|all] [--merge]
+ *   node scripts/import-external-panos.mjs [--source panoramax|mapillary|kartaview|all] [--merge] [--only city1,city2]
  *
  * Mapillary: set MAPILLARY_ACCESS_TOKEN in web/.env (https://www.mapillary.com/developer)
  * --merge: append new entries to src/data/panoramas.ts automatically
@@ -64,6 +64,25 @@ const REGIONS = [
   { id: 'warsaw', label: 'Warsaw', region: 'Warsaw, Poland', bbox: '21.00,52.22,21.06,52.26' },
   { id: 'athens', label: 'Athens', region: 'Athens, Greece', bbox: '23.71,37.96,23.77,38.00' },
   { id: 'vienna', label: 'Vienna', region: 'Vienna, Austria', bbox: '16.35,48.19,16.41,48.23' },
+  { id: 'johannesburg', label: 'Johannesburg', region: 'Johannesburg, South Africa', bbox: '27.98,-26.22,28.06,-26.16' },
+  { id: 'casablanca', label: 'Casablanca', region: 'Casablanca, Morocco', bbox: '-7.64,33.57,-7.58,33.61' },
+  { id: 'sao-paulo', label: 'São Paulo', region: 'São Paulo, Brazil', bbox: '-46.68,-23.58,-46.62,-23.52' },
+  { id: 'rio-de-janeiro', label: 'Rio de Janeiro', region: 'Rio de Janeiro, Brazil', bbox: '-43.20,-22.95,-43.14,-22.89' },
+  { id: 'lima', label: 'Lima', region: 'Lima, Peru', bbox: '-77.06,-12.08,-77.00,-12.02' },
+  { id: 'santiago', label: 'Santiago', region: 'Santiago, Chile', bbox: '-70.68,-33.47,-70.62,-33.41' },
+  { id: 'bogota', label: 'Bogotá', region: 'Bogotá, Colombia', bbox: '-74.10,4.60,-74.04,4.66' },
+  { id: 'beijing', label: 'Beijing', region: 'Beijing, China', bbox: '116.38,39.88,116.42,39.92' },
+  { id: 'shanghai', label: 'Shanghai', region: 'Shanghai, China', bbox: '121.46,31.22,121.50,31.26' },
+  { id: 'manila', label: 'Manila', region: 'Manila, Philippines', bbox: '120.97,14.58,121.01,14.62' },
+  { id: 'kuala-lumpur', label: 'Kuala Lumpur', region: 'Kuala Lumpur, Malaysia', bbox: '101.68,3.13,101.72,3.17' },
+  { id: 'delhi', label: 'Delhi', region: 'Delhi, India', bbox: '77.20,28.60,77.26,28.66' },
+  { id: 'hanoi', label: 'Hanoi', region: 'Hanoi, Vietnam', bbox: '105.83,21.01,105.87,21.05' },
+  { id: 'auckland', label: 'Auckland', region: 'Auckland, New Zealand', bbox: '174.75,-36.87,174.79,-36.83' },
+  { id: 'vancouver', label: 'Vancouver', region: 'Vancouver, Canada', bbox: '-123.14,49.27,-123.08,49.31' },
+  { id: 'miami', label: 'Miami', region: 'Miami, USA', bbox: '-80.22,25.75,-80.16,25.81' },
+  { id: 'tel-aviv', label: 'Tel Aviv', region: 'Tel Aviv, Israel', bbox: '34.76,32.06,34.80,32.10' },
+  { id: 'panama-city', label: 'Panama City', region: 'Panama City, Panama', bbox: '-79.54,8.97,-79.50,9.01' },
+  { id: 'guadalajara', label: 'Guadalajara', region: 'Guadalajara, Mexico', bbox: '-103.37,20.65,-103.31,20.71' },
 ];
 
 const KARTAVIEW_FALLBACK_SEQUENCES = [
@@ -86,11 +105,25 @@ function parseArgs() {
   const idx = process.argv.indexOf('--source');
   const source = idx >= 0 ? process.argv[idx + 1] : 'all';
   const merge = process.argv.includes('--merge');
+  const onlyIdx = process.argv.indexOf('--only');
+  const only =
+    onlyIdx >= 0
+      ? process.argv[onlyIdx + 1]
+          ?.split(',')
+          .map((s) => s.trim())
+          .filter(Boolean) ?? []
+      : null;
   if (!['all', 'panoramax', 'mapillary', 'kartaview'].includes(source)) {
     console.error('Unknown --source. Use panoramax | mapillary | kartaview | all');
     process.exit(1);
   }
-  return { source, merge };
+  return { source, merge, only };
+}
+
+function filterRegions(only) {
+  if (!only?.length) return REGIONS;
+  const set = new Set(only);
+  return REGIONS.filter((r) => set.has(r.id));
 }
 
 async function fetchJson(url, headers = {}) {
@@ -148,9 +181,9 @@ function scorePanoramaxFeature(f) {
   return score;
 }
 
-async function importPanoramax() {
+async function importPanoramax(regions = REGIONS) {
   const catalog = [];
-  for (const r of REGIONS) {
+  for (const r of regions) {
     const fileId = `${r.id}-panoramax`;
     const filename = `${fileId}.jpg`;
     const dest = path.join(OUT_DIR, filename);
@@ -411,11 +444,12 @@ async function mergeIntoPanoramasTs(entries) {
 }
 
 async function main() {
-  const { source, merge } = parseArgs();
+  const { source, merge, only } = parseArgs();
+  const regions = filterRegions(only);
   if (!existsSync(OUT_DIR)) await mkdir(OUT_DIR, { recursive: true });
 
   const all = [];
-  if (source === 'all' || source === 'panoramax') all.push(...(await importPanoramax()));
+  if (source === 'all' || source === 'panoramax') all.push(...(await importPanoramax(regions)));
   if (source === 'all' || source === 'mapillary') all.push(...(await importMapillary()));
   if (source === 'all' || source === 'kartaview') all.push(...(await importKartaview()));
 

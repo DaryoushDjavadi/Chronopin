@@ -19,6 +19,7 @@ cd web
 npm install
 cp .env.example .env
 # VITE_FIREBASE_* eintragen (für Online-Multiplayer)
+# VITE_MAPILLARY_ACCESS_TOKEN eintragen (optional — Mapillary Live in Library & Test-Runden)
 npm run build:strato
 ```
 
@@ -55,6 +56,8 @@ cd web && ./scripts/deploy-strato.sh
 ```
 
 Skript nutzt `lftp` mit `mirror --reverse --delete` — alte Assets auf dem Server werden entfernt, die nicht mehr im Build sind.
+
+**Hinweis:** `VITE_MAPILLARY_ACCESS_TOKEN` wird beim Build in den JS-Bundle eingebettet (Vite). Für Strato-Deploy also in `web/.env` setzen **vor** `npm run build:strato`. Token ist ein öffentlicher Client-Token (kein Geheimnis auf Server-Seite, aber nicht ins Git committen).
 
 ## 3. Firebase (einmalig)
 
@@ -115,11 +118,21 @@ Fortschritt (XP, Level, Perk-Vorschau) liegt in **localStorage** (`chronopin-pro
 
 Cloud-Sync für XP ist für später geplant.
 
-## 8. Factory Reset (Test)
+## 8. Panorama Library & Mapillary Live
+
+**Library** (Home → Panorama Library):
+
+- Szenen nach **Quelle** gruppiert (Wikimedia, Panoramax, Mapillary, KartaView) — Tag antippen zum Auf-/Zuklappen
+- **Schwierigkeit** mit 1–3 Sternen bewerten (sync mit Firestore wenn eingeloggt)
+- **Mapillary Live:** Home → 🌐 Mapillary Live → Library **ON** — 61 Städte als Live-Stream (MapillaryJS), Thumbnails werden beim ersten Öffnen geladen
+
+Ohne Mapillary-Token bleibt Mapillary Live deaktiviert; statische ~83 JPG-Szenen funktionieren weiter.
+
+## 9. Factory Reset (Test)
 
 Player info → ganz unten **Factory Reset** — löscht alle `chronopin-*` localStorage-Daten (inkl. XP) und zeigt die Login-Maske wieder.
 
-## 9. Anderer Unterordner?
+## 10. Anderer Unterordner?
 
 In `web/.env.production`:
 

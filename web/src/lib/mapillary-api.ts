@@ -5,6 +5,7 @@ export interface MapillaryImageHit {
   lat: number;
   lng: number;
   isPano: boolean;
+  thumbUrl?: string;
 }
 
 export function getMapillaryAccessToken(): string | null {
@@ -20,22 +21,31 @@ export function isMapillaryLiveEnabled(): boolean {
 export async function findMapillaryPanoNear(
   lat: number,
   lng: number,
-  options?: { radiusDeg?: number; limit?: number },
+  options?: { radiusDeg?: number; limit?: number; excludeIds?: string[]; jitterDeg?: number },
 ): Promise<MapillaryImageHit | null> {
   const token = getMapillaryAccessToken();
   if (!token) return null;
 
-  const radius = options?.radiusDeg ?? 0.025;
-  const limit = options?.limit ?? 25;
-  const bbox = `${lng - radius},${lat - radius},${lng + radius},${lat + radius}`;
+  const jitter = options?.jitterDeg ?? 0.01;
+  const searchLat = lat + (Math.random() - 0.5) * jitter;
+  const searchLng = lng + (Math.random() - 0.5) * jitter;
+  const radius = options?.radiusDeg ?? 0.00015;
+  const limit = options?.limit ?? 10;
+  const exclude = new Set(options?.excludeIds ?? []);
+  const bbox = `${searchLng - radius},${searchLat - radius},${searchLng + radius},${searchLat + radius}`;
   const url =
     `https://graph.mapillary.com/images?access_token=${encodeURIComponent(token)}` +
-    `&fields=id,computed_geometry,is_pano,captured_at` +
+    `&fields=id,computed_geometry,is_pano,captured_at,thumb_256_url` +
     `&bbox=${bbox}&is_pano=true&limit=${limit}`;
 
   const res = await fetch(url);
   const data = (await res.json()) as {
-    data?: { id: number; is_pano?: boolean; computed_geometry?: { coordinates: [number, number] } }[];
+    data?: {
+      id: number;
+      is_pano?: boolean;
+      computed_geometry?: { coordinates: [number, number] };
+      thumb_256_url?: string;
+    }[];
     error?: { message?: string };
   };
 
@@ -46,13 +56,18 @@ export async function findMapillaryPanoNear(
   const images = data.data ?? [];
   if (!images.length) return null;
 
-  const pick = images[Math.floor(Math.random() * images.length)]!;
-  const [hitLng, hitLat] = pick.computed_geometry?.coordinates ?? [lng, lat];
+  const panos = images.filter((img) => img.is_pano && !exclude.has(String(img.id)));
+  const pool = panos.length ? panos : images.filter((img) => !exclude.has(String(img.id)));
+  if (!pool.length) return null;
+
+  const pick = pool[Math.floor(Math.random() * pool.length)]!;
+  const [hitLng, hitLat] = pick.computed_geometry?.coordinates ?? [searchLng, searchLat];
   return {
     id: String(pick.id),
     lat: hitLat,
     lng: hitLng,
     isPano: Boolean(pick.is_pano),
+    thumbUrl: pick.thumb_256_url,
   };
 }
 

@@ -39,7 +39,7 @@ Without `.env`, app runs **offline** using `localStorage` only (demo friends, lo
 | Layer | Choice |
 |---|---|
 | Build | Vite 6 + TypeScript (strict) |
-| 360° viewer | [Pannellum](https://pannellum.org/) (CDN) |
+| 360° viewer | [Pannellum](https://pannellum.org/) (CDN) for static JPGs · [MapillaryJS](https://mapillary.github.io/mapillary-js/) for live API streams |
 | Guess map | MapLibre GL JS + [OpenFreeMap](https://openfreemap.org/) |
 | UI | Vanilla TS + `styles.css` |
 | Persistence | `localStorage` + Firebase Auth/Firestore |
@@ -127,10 +127,26 @@ Local-only meta — stored in `chronopin-progression` (`xp`, `lifetimeXp`). Not 
 | Explore / Guess | Solo or co-op (`isCoopRun`); round intro overlay on explore |
 | Result / Game over | XP gain banner |
 | Co-op Wait / Reveal / Vote / Result | Multiplayer phases; live polling on wait/reveal/vote |
-| Library / Library View / Library Map | Trash excluded from map pins |
+| Library / Library View / Library Map | Trash excluded from map pins; **accordion groups** by source tag (wikimedia / panoramax / mapillary / kartaview) |
 | Player Info | Stats, avatar edit, stash, **Level & XP**, **Factory Reset** |
 
-**Overlays:** Social, Co-op setup, Credits, Classic region, Daily wheel, Inventory (solo), Match chat (co-op), Admin (⚙), Round intro.
+**Overlays:** Social, Co-op setup, Credits, Classic region, Daily wheel, Inventory (solo), Match chat (co-op), Admin (⚙), Round intro, **Mapillary Live settings**.
+
+---
+
+## Panorama library
+
+**Static catalog:** `data/panoramas.ts` — **83** equirectangular JPGs in `public/panoramas/` (Wikimedia, Panoramax, KartaView).
+
+**Mapillary Live (optional):** When `VITE_MAPILLARY_ACCESS_TOKEN` is set and library toggle is ON, **61** virtual entries are merged from `data/mapillary-live-spots.ts`. Each resolves a nearby 360° image via Mapillary Graph API; thumbnails cached in `localStorage`. Preview uses MapillaryJS, not Pannellum.
+
+**UI grouping:** `lib/library.ts` → `groupVisiblePanoramasBySource()` renders collapsible sections. Expand state: `chronopin-library-groups`.
+
+**Difficulty ratings:** `lib/pano-ratings.ts` + `lib/firebase-pano-ratings.ts` — 1–3★ per `panoId`; sync on login and library open.
+
+**Import pipeline:** `scripts/import-external-panos.mjs` — Panoramax / Mapillary JPG / KartaView; `--merge` appends to `panoramas.ts`; `--only city1,city2` filters seeds.
+
+**Modules:** `lib/mapillary-api.ts`, `lib/mapillary-viewer.ts`, `lib/mapillary-live-catalog.ts`, `lib/mapillary-live-ui.ts`
 
 ---
 
@@ -154,6 +170,7 @@ web/src/
 │   ├── firebase.ts, firebase-auth.ts, firebase-profile.ts
 │   ├── firebase-friends.ts, firebase-coop.ts, firebase-social.ts
 │   ├── firebase-match-chat.ts, firebase-scoreboard.ts, firebase-pano-ratings.ts
+│   ├── mapillary-api.ts, mapillary-viewer.ts, mapillary-live-catalog.ts, mapillary-live-ui.ts
 │   ├── coop-ui.ts, match-chat-ui.ts, social-ui.ts
 │   ├── avatar-compose.ts, avatar-editor-ui.ts
 │   ├── daily.ts, library.ts, profile.ts, scoreboard.ts, stats.ts, …
@@ -178,7 +195,11 @@ web/scripts/
 | `chronopin-match-chat` | Match chat cache |
 | `chronopin-coop-rooms` / `coop-invites` / `coop-active` | Co-op state |
 | `chronopin-trashed-panos` / `seen-panos` | Library |
+| `chronopin-library-groups` | Accordion expand state per source tag |
 | `chronopin-pano-ratings` | Panorama difficulty cache (1–3★); synced to Firestore `panoramaRatings` when signed in |
+| `chronopin-mapillary-live-cache` | Resolved Mapillary image IDs + thumbs per city seed |
+| `chronopin-mapillary-live-prefs` | Mapillary Live library/gameplay toggles |
+| `chronopin-mapillary-live-recent` | Recently used Mapillary image IDs (avoid repeats) |
 | `chronopin-daily` / `chronopin-stash` | Daily rewards |
 | `chronopin-scoreboard` / `player-stats` | Solo meta |
 
@@ -229,7 +250,8 @@ Players named **Admin**, **Dary**, or **Daryoush** get ⚙ on Home → search cl
 | XP / level cloud sync | Local only |
 | Level perks | Placeholder text only — no gameplay effect yet |
 | Pano/map loading UI | None (blank until loaded) |
-| Bundle size | ~1.7 MB JS (MapLibre eager load) |
+| Mapillary Live | Requires client token; API rate/coverage varies by city; verify Mapillary ToS for commercial game |
+| Bundle size | ~1.7 MB JS + MapillaryJS chunk when live viewer loads |
 
 ---
 

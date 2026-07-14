@@ -100,9 +100,19 @@ import {
   type XpAwardResult,
 } from './lib/progression';
 import { renderRoundIntroOverlay } from './lib/round-intro-ui';
-import { isMapillaryLiveEnabled, findMapillaryPanoNear } from './lib/mapillary-api';
+import { isMapillaryLiveEnabled } from './lib/mapillary-api';
 import { mountMapillaryViewer, destroyMapillaryViewer } from './lib/mapillary-viewer';
-import { pickMapillaryLiveSpot, MAPILLARY_LIVE_SPOTS } from './data/mapillary-live-spots';
+import {
+  ensureMapillaryAssetResolved,
+  getMapillaryLiveImageId,
+  getMapillaryLiveResolvedCount,
+  isMapillaryLiveLibraryEnabled,
+  pickRandomMapillaryLiveRound,
+  readMapillaryLivePrefs,
+  refreshAllMapillaryLivePreviews,
+  writeMapillaryLivePrefs,
+} from './lib/mapillary-live-catalog';
+import { renderMapillaryLiveOverlayHtml } from './lib/mapillary-live-ui';
 import { renderLevelUpOverlay } from './lib/level-up-ui';
 import { renderSocialOverlayHtml, renderSocialSearchResultsHtml } from './lib/social-ui';
 import { isAdminPlayer } from './lib/admin';
@@ -131,6 +141,9 @@ import {
   markPanoramaSeen,
   panoramaUrl,
   renderPanoramaBadges,
+  groupVisiblePanoramasBySource,
+  isLibraryGroupExpanded,
+  toggleLibraryGroupExpanded,
 } from './lib/library';
 import {
   getPanoramaDifficulty,
@@ -253,6 +266,8 @@ let state: AppState = {
   creditsOpen: false,
   classicSetupOpen: false,
   classicRegion: 'world',
+  mapillarySetupOpen: false,
+  mapillarySetupStatus: null,
   isDailyRun: false,
   dailyWheelOpen: false,
   dailyWheelResult: null,
@@ -512,13 +527,13 @@ function renderHome(): string {
             </button>
             ${
               isMapillaryLiveEnabled()
-                ? `<button class="tool-card tool-card-mapillary" data-action="mapillary-live-test">
+                ? `<button class="tool-card tool-card-mapillary" data-action="open-mapillary-setup">
               <span class="tool-icon">🌐</span>
               <span class="tool-info">
                 <strong>Mapillary Live</strong>
-                <span>Stream a real 360° street pano via API (beta test)</span>
+                <span>${isMapillaryLiveLibraryEnabled() ? 'Live street panos in library &amp; test rounds' : 'Disabled — tap to configure'}</span>
               </span>
-              <span class="tool-badge tool-badge-live">LIVE</span>
+              <span class="tool-badge ${isMapillaryLiveLibraryEnabled() ? 'tool-badge-live' : ''}">${isMapillaryLiveLibraryEnabled() ? 'ON' : 'OFF'}</span>
             </button>`
                 : `<button class="tool-card tool-card-disabled" type="button" disabled title="Set VITE_MAPILLARY_ACCESS_TOKEN in web/.env">
               <span class="tool-icon">🌐</span>
@@ -552,6 +567,7 @@ function renderHome(): string {
       ${renderCoopSetup()}
       ${renderCreditsOverlay()}
       ${renderClassicRegionOverlay()}
+      ${renderMapillaryLiveOverlay()}
       ${renderDailyWheelOverlay(state.dailyWheelOpen, state.dailyWheelResult)}
     </div>
   `;
@@ -1081,6 +1097,49 @@ function renderClassicRegionOverlay(): string {
   return renderClassicRegionOverlayHtml(state.classicSetupOpen, state.classicRegion);
 }
 
+function renderMapillaryLiveOverlay(): string {
+  return renderMapillaryLiveOverlayHtml(state.mapillarySetupOpen, state.mapillarySetupStatus);
+}
+
+function setMapillarySetupOpen(open: boolean): void {
+  state.mapillarySetupOpen = open;
+  if (!open) state.mapillarySetupStatus = null;
+  patchMapillaryOverlay();
+}
+
+function patchMapillaryOverlay(): void {
+  const html = renderMapillaryLiveOverlay();
+  const existing = app.querySelector('[data-mapillary-overlay]');
+  if (existing) existing.outerHTML = html;
+  else if (state.mapillarySetupOpen) app.insertAdjacentHTML('beforeend', html);
+  bindMapillarySetupEvents();
+}
+
+function bindMapillarySetupEvents(): void {
+  const overlay = app.querySelector('[data-mapillary-overlay]');
+  if (!overlay) return;
+
+  overlay.querySelectorAll('[data-mapillary-pref]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const el = input as HTMLInputElement;
+      const key = el.dataset.mapillaryPref as 'libraryEnabled' | 'includeInGameplay';
+      const prefs = readMapillaryLivePrefs();
+      if (key === 'libraryEnabled') {
+        prefs.libraryEnabled = el.checked;
+        if (!el.checked) prefs.includeInGameplay = false;
+      } else if (key === 'includeInGameplay') {
+        prefs.includeInGameplay = el.checked;
+      }
+      writeMapillaryLivePrefs(prefs);
+      state.mapillarySetupStatus = prefs.libraryEnabled
+        ? `Mapillary Live enabled · ${getMapillaryLiveResolvedCount()} previews cached`
+        : 'Mapillary Live hidden from library';
+      patchMapillaryOverlay();
+      if (state.screen === 'home') render();
+    });
+  });
+}
+
 function setClassicSetupOpen(open: boolean): void {
   state.classicSetupOpen = open;
   if (open) {
@@ -1290,6 +1349,11 @@ function patchHomeOverlays(): void {
   const coopEl = screen.querySelector('[data-coop-overlay]');
   if (coopEl) coopEl.outerHTML = coopHtml;
   else screen.insertAdjacentHTML('beforeend', coopHtml);
+
+  const mapillaryHtml = renderMapillaryLiveOverlay();
+  screen.querySelectorAll('[data-mapillary-overlay]').forEach((el) => el.remove());
+  if (mapillaryHtml) screen.insertAdjacentHTML('beforeend', mapillaryHtml);
+  bindMapillarySetupEvents();
 
   const adminHtml = renderAdminOverlayHtml(
     state.adminOpen,
@@ -1591,6 +1655,46 @@ function bindSocialEventsOnce(): void {
       if (getClassicRegionPanoramaCount(state.classicRegion) === 0) return;
       setClassicSetupOpen(false);
       startGame('classic');
+      return;
+    }
+
+    if (target.closest('[data-action="open-mapillary-setup"]')) {
+      if (state.screen === 'home') {
+        e.preventDefault();
+        setMapillarySetupOpen(true);
+      }
+      return;
+    }
+
+    if (target.closest('[data-action="close-mapillary-setup"]')) {
+      e.preventDefault();
+      setMapillarySetupOpen(false);
+      return;
+    }
+
+    if (target.closest('[data-action="mapillary-open-library"]')) {
+      e.preventDefault();
+      setMapillarySetupOpen(false);
+      navigateFromHome('library');
+      return;
+    }
+
+    if (target.closest('[data-action="mapillary-play-random"]')) {
+      e.preventDefault();
+      setMapillarySetupOpen(false);
+      void startMapillaryLiveRound();
+      return;
+    }
+
+    if (target.closest('[data-action="mapillary-refresh-all"]')) {
+      e.preventDefault();
+      state.mapillarySetupStatus = 'Refreshing all city previews…';
+      patchMapillaryOverlay();
+      void refreshAllMapillaryLivePreviews().then((count) => {
+        state.mapillarySetupStatus = `Refreshed ${count} live preview${count === 1 ? '' : 's'}.`;
+        patchMapillaryOverlay();
+        if (state.screen === 'library' || state.screen === 'library-view') render();
+      });
       return;
     }
 
@@ -2157,9 +2261,32 @@ function renderGameOver(): string {
   `;
 }
 
+function renderLibraryListItem(p: import('./types').PanoramaAsset, globalIndex: number): string {
+  const thumb = panoramaUrl(p);
+  const thumbClass = p.mapillaryLive ? 'library-thumb library-thumb-live' : 'library-thumb';
+  return `
+                <li class="library-item${p.mapillaryLive ? ' library-item-live' : ''}" data-id="${p.id}" data-index="${globalIndex}">
+                  ${
+                    thumb
+                      ? `<img class="${thumbClass}" src="${thumb}" alt="${escapeHtml(p.title)}" loading="lazy" data-mapillary-thumb="${p.mapillaryLive ? p.id : ''}" />`
+                      : `<div class="${thumbClass} library-thumb-placeholder" data-mapillary-thumb="${p.mapillaryLive ? p.id : ''}" aria-hidden="true">🌐</div>`
+                  }
+                  <div class="library-meta">
+                    <strong class="library-title">${p.title}</strong>
+                    ${renderPanoramaBadges(p, { hideSource: true, compact: true })}
+                    <span class="library-region">${p.region}</span>
+                    <span class="library-tags">${p.modes.join(' · ')}${p.mapillaryLive ? ' · live stream' : ''}</span>
+                    ${renderPanoramaDifficultyStars(p.id, { interactive: true, compact: true })}
+                  </div>
+                  <button class="library-delete" data-delete="${p.id}" aria-label="Move ${p.title} to trash" title="Move to trash">🗑</button>
+                </li>`;
+}
+
 function renderLibrary(): string {
   const items = getVisiblePanoramas();
   const trashed = getTrashedPanoramas();
+  const groups = groupVisiblePanoramasBySource(items);
+  const indexById = new Map(items.map((p, i) => [p.id, i]));
 
   return `
     <div class="screen screen-library">
@@ -2167,7 +2294,7 @@ function renderLibrary(): string {
         <button class="icon-btn" data-action="home" aria-label="Home">←</button>
         <div>
           <h2>Panorama Library</h2>
-          <p>${items.length} active · ${trashed.length} in trash · tap ★ to rate difficulty${isFirebaseConfigured() ? ' (cloud)' : ''}</p>
+          <p>${items.length} active · ${groups.length} sources · tap a tag to expand${isFirebaseConfigured() ? ' · ★ cloud' : ''}</p>
         </div>
         <button class="icon-btn library-map-btn" data-action="library-map" aria-label="World map" title="World map">🌍</button>
       </div>
@@ -2178,23 +2305,36 @@ function renderLibrary(): string {
               <p>No active panoramas.</p>
               ${trashed.length > 0 ? `<button class="btn btn-secondary" data-action="restore-all-trash">Restore all from trash</button>` : ''}
             </div>`
-          : `<ul class="library-list">
-              ${items
-                .map(
-                  (p, i) => `
-                <li class="library-item" data-id="${p.id}" data-index="${i}">
-                  <img class="library-thumb" src="${panoramaUrl(p)}" alt="${escapeHtml(p.title)}" loading="lazy" />
-                  <div class="library-meta">
-                    <strong>${p.title}${renderPanoramaBadges(p)}</strong>
-                    <span>${p.region}</span>
-                    <span class="library-tags">${p.modes.join(' · ')}</span>
-                    ${renderPanoramaDifficultyStars(p.id, { interactive: true, compact: true })}
-                  </div>
-                  <button class="library-delete" data-delete="${p.id}" aria-label="Move ${p.title} to trash" title="Move to trash">🗑</button>
-                </li>`,
-                )
+          : `<div class="library-groups">
+              ${groups
+                .map((group) => {
+                  const open = isLibraryGroupExpanded(group.key);
+                  const liveNote =
+                    group.key === 'mapillary' && group.items.some((p) => p.mapillaryLive)
+                      ? ' · includes live stream'
+                      : '';
+                  return `
+              <section class="library-group${open ? ' open' : ''}" data-library-group="${group.key}">
+                <button
+                  type="button"
+                  class="library-group-header"
+                  data-action="toggle-library-group"
+                  data-group="${group.key}"
+                  aria-expanded="${open}"
+                >
+                  <span class="library-group-chevron" aria-hidden="true">▸</span>
+                  <span class="library-source-badge library-source-${group.key}">${group.label}</span>
+                  <span class="library-group-meta">${group.items.length} scene${group.items.length === 1 ? '' : 's'}${liveNote}</span>
+                </button>
+                <ul class="library-list library-group-list">
+                  ${group.items
+                    .map((p) => renderLibraryListItem(p, indexById.get(p.id) ?? 0))
+                    .join('')}
+                </ul>
+              </section>`;
+                })
                 .join('')}
-            </ul>`
+            </div>`
       }
 
       ${
@@ -2236,16 +2376,19 @@ function renderLibraryView(): string {
       <div class="top-bar">
         <button class="icon-btn" data-action="library-back" aria-label="Back to list">←</button>
         <div class="top-bar-center">
-          <span class="round-title">${item.title}${renderPanoramaBadges(item)}</span>
+          <span class="round-title library-view-title">${item.title}</span>
+          ${renderPanoramaBadges(item)}
           <span class="library-view-region">${item.region}</span>
         </div>
         <span class="library-nav-count">${idx + 1}/${items.length}</span>
       </div>
 
       <div id="pano" class="pano-container" aria-label="360 preview"></div>
+      ${item.mapillaryLive ? '<div class="mapillary-live-banner">🌐 Mapillary Live preview</div>' : ''}
 
       <div class="library-view-bar">
         <button class="btn btn-secondary" data-action="lib-prev" ${idx === 0 ? 'disabled' : ''}>← Prev</button>
+        ${item.mapillaryLive ? `<button class="btn btn-secondary" data-action="mapillary-refresh-one" data-id="${item.id}">↻ Refresh live</button>` : ''}
         <button class="btn btn-secondary" data-action="lib-delete" data-id="${item.id}">Trash</button>
         <button class="btn btn-secondary" data-action="lib-next" ${idx >= items.length - 1 ? 'disabled' : ''}>Next →</button>
       </div>
@@ -2572,6 +2715,8 @@ function resetStateForLogin(): void {
     creditsOpen: false,
     classicSetupOpen: false,
     classicRegion: 'world',
+    mapillarySetupOpen: false,
+    mapillarySetupStatus: null,
     isDailyRun: false,
     dailyWheelOpen: false,
     dailyWheelResult: null,
@@ -2865,8 +3010,8 @@ function bindHomeEvents(): void {
     navigateFromHome('player-info');
   });
 
-  app.querySelector('[data-action="mapillary-live-test"]')?.addEventListener('click', () => {
-    void startMapillaryLiveRound();
+  app.querySelector('[data-action="open-mapillary-setup"]')?.addEventListener('click', () => {
+    setMapillarySetupOpen(true);
   });
 }
 
@@ -3062,12 +3207,24 @@ function bindLibraryEvents(): void {
     if (changed && state.screen === 'library') render();
   });
 
+  void hydrateMapillaryLibraryThumbs();
+
   app.querySelector('[data-action="library-map"]')?.addEventListener('click', () => {
     state.screen = 'library-map';
     render();
   });
 
   bindPanoramaRatingEvents();
+
+  app.querySelectorAll('[data-action="toggle-library-group"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const key = (btn as HTMLElement).dataset.group as import('./types').PanoramaSource;
+      if (key) toggleLibraryGroupExpanded(key);
+      render();
+    });
+  });
 
   app.querySelectorAll('.library-item:not(.library-item-trash)').forEach((item) => {
     item.addEventListener('click', (e) => {
@@ -3178,6 +3335,35 @@ function bindLibraryViewEvents(): void {
       render();
     })();
   });
+
+  app.querySelector('[data-action="mapillary-refresh-one"]')?.addEventListener('click', () => {
+    const id = (app.querySelector('[data-action="mapillary-refresh-one"]') as HTMLElement).dataset.id;
+    if (!id) return;
+    void ensureMapillaryAssetResolved(id, { force: true }).then(() => render());
+  });
+}
+
+async function hydrateMapillaryLibraryThumbs(): Promise<void> {
+  if (state.screen !== 'library') return;
+  const items = getVisiblePanoramas().filter((p) => p.mapillaryLive);
+  for (const asset of items) {
+    const entry =
+      (await ensureMapillaryAssetResolved(asset.id)) ?? null;
+    if (!entry?.thumbUrl || state.screen !== 'library') continue;
+    app.querySelectorAll(`[data-mapillary-thumb="${asset.id}"]`).forEach((el) => {
+      if (el instanceof HTMLImageElement) {
+        el.src = entry.thumbUrl!;
+      } else if (el instanceof HTMLElement) {
+        const img = document.createElement('img');
+        img.className = 'library-thumb library-thumb-live';
+        img.src = entry.thumbUrl!;
+        img.alt = asset.title;
+        img.loading = 'lazy';
+        img.dataset.mapillaryThumb = asset.id;
+        el.replaceWith(img);
+      }
+    });
+  }
 }
 
 function triggerRoundIntro(roundId: string): void {
@@ -3307,36 +3493,16 @@ async function startMapillaryLiveRound(): Promise<void> {
     return;
   }
 
-  const btn = app.querySelector('[data-action="mapillary-live-test"]') as HTMLButtonElement | null;
-  if (btn) btn.disabled = true;
-
-  const spots = [...MAPILLARY_LIVE_SPOTS].sort(() => Math.random() - 0.5);
-  let hit: Awaited<ReturnType<typeof findMapillaryPanoNear>> = null;
-  let spot = pickMapillaryLiveSpot();
-  let lastError: string | null = null;
-
-  for (const candidate of spots.slice(0, 6)) {
-    try {
-      hit = await findMapillaryPanoNear(candidate.lat, candidate.lng);
-      if (hit) {
-        spot = candidate;
-        break;
-      }
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
-    }
-  }
-
-  if (btn) btn.disabled = false;
-
-  if (!hit) {
+  const picked = await pickRandomMapillaryLiveRound();
+  if (!picked) {
     void alertDialog(
-      lastError ??
-        'No 360° Mapillary images found near test cities. Token OK — try again or pick another region.',
+      'Could not load a live Mapillary panorama. Try “Refresh all previews” in Mapillary settings.',
       'Mapillary Live',
     );
     return;
   }
+
+  const { asset, entry } = picked;
 
   destroyPanorama();
   destroyMap();
@@ -3346,7 +3512,7 @@ async function startMapillaryLiveRound(): Promise<void> {
   resetRunStreak();
 
   state.useMapillaryLive = true;
-  state.mapillaryImageId = hit.id;
+  state.mapillaryImageId = entry.imageId;
   state.mode = 'classic';
   state.isDailyRun = false;
   state.isCoopRun = false;
@@ -3355,26 +3521,28 @@ async function startMapillaryLiveRound(): Promise<void> {
     hearts: MAX_HEARTS,
     score: 0,
     roundNumber: 1,
-    usedRoundIds: [`mapillary-live-${hit.id}`],
+    usedRoundIds: [`${asset.id}-classic`],
     lastLostHeart: false,
     lastRoundPoints: 0,
     usedItemsThisRound: [],
     activeHint: null,
   };
   state.round = {
-    id: `mapillary-live-${hit.id}`,
-    panoramaId: `mapillary-${hit.id}`,
+    id: `${asset.id}-classic`,
+    panoramaId: asset.id,
     modes: ['classic'],
-    title: spot.label,
+    title: asset.title,
     panorama: '',
     answer: {
-      lat: hit.lat,
-      lng: hit.lng,
-      label: `${spot.region} · Mapillary Live`,
+      lat: entry.lat,
+      lng: entry.lng,
+      label: `${asset.region} · Mapillary Live`,
     },
-    context: 'Live 360° street panorama streamed from Mapillary Graph API.',
-    attribution: '© Mapillary contributors',
-    license: 'CC BY-SA',
+    context: asset.context,
+    attribution: asset.attribution,
+    license: asset.license,
+    mapillaryLive: true,
+    mapillaryImageId: entry.imageId,
   };
   state.guess = null;
   triggerRoundIntro(state.round.id);
@@ -3411,6 +3579,11 @@ function nextRound(): void {
   state.inventoryOpen = false;
   state.round = round;
   state.guess = null;
+  state.useMapillaryLive = Boolean(round.mapillaryLive && round.mapillaryImageId);
+  state.mapillaryImageId = round.mapillaryImageId ?? null;
+  if (!state.useMapillaryLive) {
+    state.mapillaryImageId = null;
+  }
   markPanoramaSeen(round.panoramaId);
   triggerRoundIntro(round.id);
   state.screen = 'explore';
@@ -3820,6 +3993,8 @@ function goHome(): void {
     creditsOpen: false,
     classicSetupOpen: false,
     classicRegion: state.classicRegion,
+    mapillarySetupOpen: false,
+    mapillarySetupStatus: null,
     isDailyRun: false,
     dailyWheelOpen: false,
     dailyWheelResult: null,
@@ -3893,11 +4068,28 @@ function initPanorama(): void {
 }
 
 async function initPanoramaViewer(): Promise<void> {
+  const token = ++panoInitToken;
+  destroyPanorama();
+
+  let imageId: string | null = null;
+
   if (state.useMapillaryLive && state.mapillaryImageId) {
-    const token = ++panoInitToken;
-    destroyPanorama();
+    imageId = state.mapillaryImageId;
+  } else if (state.screen === 'library-view') {
+    const items = getVisiblePanoramas();
+    const item = items[resolveLibraryIndex()];
+    if (item?.mapillaryLive) {
+      imageId = getMapillaryLiveImageId(item.id);
+      if (!imageId) {
+        const entry = await ensureMapillaryAssetResolved(item.id);
+        imageId = entry?.imageId ?? null;
+      }
+    }
+  }
+
+  if (imageId) {
     try {
-      await mountMapillaryViewer('pano', state.mapillaryImageId);
+      await mountMapillaryViewer('pano', imageId);
     } catch (err) {
       if (token !== panoInitToken) return;
       console.error('Mapillary viewer failed:', err);
@@ -3908,6 +4100,7 @@ async function initPanoramaViewer(): Promise<void> {
     }
     return;
   }
+
   initPanorama();
 }
 

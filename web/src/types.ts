@@ -80,6 +80,9 @@ export interface Round {
   attribution: string;
   license: string;
   isAiGenerated?: boolean;
+  /** Stream via MapillaryJS instead of static JPG */
+  mapillaryLive?: boolean;
+  mapillaryImageId?: string;
 }
 
 export interface Guess {
@@ -124,6 +127,9 @@ export interface AppState {
   creditsOpen: boolean;
   /** Classic mode: region picker open on home */
   classicSetupOpen: boolean;
+  /** Mapillary Live settings panel on home */
+  mapillarySetupOpen: boolean;
+  mapillarySetupStatus: string | null;
   /** Active classic region filter for the current run */
   classicRegion: ClassicRegionFilter;
   /** Today's daily challenge run */

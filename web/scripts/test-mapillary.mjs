@@ -33,7 +33,7 @@ if (!token) {
   process.exit(1);
 }
 
-const bbox = '13.377,52.517,13.381,52.521';
+const bbox = '13.4050,52.5200,13.4052,52.5202';
 const url =
   `https://graph.mapillary.com/images?access_token=${encodeURIComponent(token)}` +
   `&fields=id,is_pano,computed_geometry,thumb_256_url&bbox=${bbox}&is_pano=true&limit=5`;

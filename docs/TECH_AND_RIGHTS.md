@@ -14,11 +14,21 @@ The playable demo in [`web/`](../web/) uses only assets we can document and attr
 
 ### Panoramas (Classic mode test content)
 
-- **~44 equirectangular scenes** in the library (Wikimedia + Panoramax imports under `web/public/panoramas/`)
-- Source: **Wikimedia Commons** (CC BY-SA 3.0 / 4.0 and similar — per-file in [`web/public/panoramas/LICENSE.md`](../web/public/panoramas/LICENSE.md)) plus **Panoramax** where noted
-- Downloaded via Wikimedia `Special:FilePath?width=1536` (scaled, not full resolution) or import script
+- **83 equirectangular JPGs** in `web/public/panoramas/` (Wikimedia Commons + Panoramax + one KartaView scene)
+- Catalog: `web/src/data/panoramas.ts` — source tags: `wikimedia`, `panoramax`, `kartaview`
+- Source: **Wikimedia Commons** (CC BY-SA 3.0 / 4.0 and similar — per-file in [`web/public/panoramas/LICENSE.md`](../web/public/panoramas/LICENSE.md)) plus **Panoramax** / **KartaView** where noted
+- Downloaded via Wikimedia `Special:FilePath?width=1536` (scaled) or `npm run import:panos` (`scripts/import-external-panos.mjs`, optional `--merge`, `--only city1,city2`)
 - **Commercial use:** CC BY-SA generally allows commercial use **with attribution and ShareAlike on derivatives** — confirm per file; keep attribution in-app and in repo
-- **Not for final product volume alone** — curated/owned packs or Mapillary (see below) remain the commercial Classic strategy; Wikimedia/Panoramax is fine for **prototype / dev testing**
+- **Not for final product volume alone** — curated/owned packs remain the commercial Classic strategy; Wikimedia/Panoramax/KartaView JPGs are fine for **prototype / dev testing**
+
+### Mapillary Live (prototype — streamed, not bundled JPGs)
+
+- **61 city seed locations** in `data/mapillary-live-spots.ts` — resolved at runtime via Mapillary Graph API
+- Viewer: **MapillaryJS** (`lib/mapillary-viewer.ts`); lookup: `lib/mapillary-api.ts`
+- Requires free **client access token** (`VITE_MAPILLARY_ACCESS_TOKEN` in `web/.env`, baked into build for Strato)
+- User toggles: library visibility + optional inclusion in solo gameplay (`lib/mapillary-live-catalog.ts`)
+- **Before paid launch:** read Mapillary Terms §12 Commercial; app must supplement Mapillary, show attribution; do not long-term cache/rehost tiles without permission
+- Thumbnails cached locally for UX only — not a substitute for licensing review
 
 ### Avatar sprites (Universal LPC)
 
@@ -39,19 +49,21 @@ The playable demo in [`web/`](../web/) uses only assets we can document and attr
 | Service | Use | Notes |
 |---|---|---|
 | **OpenFreeMap** + MapLibre | Guess/result pin map | OSM-based; show attribution |
-| **Pannellum** (jsDelivr CDN) | 360° panorama viewer | MIT license; CDN script in `index.html` |
+| **Pannellum** (jsDelivr CDN) | 360° viewer for static JPG panos | MIT license; CDN script in `index.html` |
+| **MapillaryJS** (npm bundle) | 360° viewer for Mapillary Live streams | Mapillary ToS + attribution required |
 | **Google Fonts** | DM Sans, JetBrains Mono, Press Start 2P | SIL Open Font License |
 
 ### Web prototype — production gaps (rights & scope)
 
 | Area | Prototype status |
 |---|---|
-| Classic panoramas | Wikimedia + Panoramax test set — replace/expand for store |
+| Classic panoramas | Wikimedia + Panoramax + KartaView JPG set (~83) — replace/expand for store |
 | Past/Future rounds | Placeholder years on Classic panos (no separate AI asset packs yet) |
 | Social / Co-op / Scoreboard | **Real Firebase** when `.env` configured — not mock UI |
+| Panorama difficulty ratings | Firestore `panoramaRatings` when online |
 | XP / Level progression | **Local only** (`localStorage`) — no cloud account data yet |
 | Level perks | Placeholder copy only — no gameplay bonuses shipped |
-| Mapillary / live street API | Import script exists; not core gameplay yet |
+| Mapillary Live | **Playable in prototype** (API stream + MapillaryJS) — legal review before store |
 
 ---
 
@@ -218,7 +230,7 @@ Multiplayer (co-op decide, 1v1) only syncs **guesses / pins / votes**, not heavy
 
 ## Suggested build order (rights-first)
 
-0. **Done:** Web prototype with Wikimedia/Panoramax Classic pack + LPC avatars + Firebase co-op ([`web/`](../web/), [`WEB_PROTOTYPE.md`](./WEB_PROTOTYPE.md))  
+0. **Done:** Web prototype with Wikimedia/Panoramax/KartaView Classic pack + Mapillary Live (optional) + LPC avatars + Firebase co-op ([`web/`](../web/), [`WEB_PROTOTYPE.md`](./WEB_PROTOTYPE.md))  
 1. Solo Classic with **owned/curated** static rounds + OSM map (replace/expand Wikimedia test set for store)  
 2. Past pack via AI pipeline + in-app “AI reconstruction” label  
 3. ~~Co-op Decide (2 players)~~ — **playable** in web prototype with Firebase  
