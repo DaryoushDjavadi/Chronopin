@@ -112,3 +112,35 @@ Prefer **API / business account**, not consumer ChatGPT screengrabs.
 <!-- TODO: expand with app ↔ CDN ↔ pack manifest ↔ multiplayer sync diagram -->
 
 See also: [`README.md`](../README.md) for product scope, modes, and V1 roadmap.
+
+
+[Expo app] ├── Classic packs → CDN images you license/own ├── Past packs → CDN AI assets you generated ├── Future packs → CDN AI assets you generated ├── Map → MapLibre + OSM/MapTiler (pin only) └── Multiplayer → Firebase / Supabase rooms (co-op, duel)
+
+[Content pipeline - offline] script → AI API → QA → upload CDN → publish round manifest
+
+
+
+Multiplayer (co-op decide, 1v1) only syncs **guesses / pins / votes**, not heavy imagery (clients pull the same pack id).
+
+---
+
+## What we will not do for paid launch
+- Bulk download / cache Google Street View as our game library  
+- Use Google imagery on a non-Google map stack in ways ToS forbid  
+- Ship AI scenes without QA / labeling  
+- Pretend AI past scenes are archival photos  
+
+---
+
+## Suggested build order (rights-first)
+1. Solo Classic with **owned/curated** static rounds + OSM map  
+2. Past pack via AI pipeline + in-app “AI reconstruction” label  
+3. Co-op Decide + 1v1 (room codes)  
+4. Future pack  
+5. Optional: Mapillary/Panoramax “live classic” if legal review OK  
+6. Later: Battle Royale  
+
+---
+
+## Repo / access note
+Push from this agent requires the **Cursor GitHub App** to have write access to `DaryoushDjavadi/Chronopin` (currently install appears limited to other repos).
