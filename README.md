@@ -20,18 +20,21 @@ Guess **where** you are. In time modes, also guess **when**.
 **Spiel & Content**
 - Web-Prototyp (Vite + TS, mobile-first): Login → Home → Explore → Guess → Result
 - **83 statische Panoramen** (Wikimedia, Panoramax, KartaView) + optional **61 Mapillary Live** (API-Stream, kein JPG)
-- Panorama-Bibliothek: **aufklappbare Gruppen** nach Quelle (Wikimedia / Panoramax / Mapillary / KartaView), Anbieter-Tags, **`new`-Badge**
+- Panorama-Bibliothek: **aufklappbare Gruppen** nach Quelle → darunter **Land** (z.B. Germany, France) · **Papierkorb** aufklappbar · **Weltkarte**
+- **Szene melden** (⚠ oben rechts) — defekte/schwarze Panos melden; Solo: **nächste Szene ohne Herzverlust**
+- **Admin „Zur Überprüfung“** — gemeldete Szenen prüfen, behalten oder in Papierkorb (Admin / Dary / Daryoush)
+- **Panorama-Loading** — Spinner statt schwarzem Bild während Pannellum/Mapillary lädt
 - **Schwierigkeits-Sterne** (1–3★) pro Szene — lokal + **Firestore-Sync** (`panoramaRatings`)
 - **Mapillary Live** — Home → 🌐: Library ON/OFF, optional in Gameplay, Refresh, Zufalls-Runde (Token: `VITE_MAPILLARY_ACCESS_TOKEN`)
-- **Classic-Region**, **Daily ChronoPin** + Glücksrad, **Stash**, 3 Herzen pro Run
-- Panorama-Bibliothek: 360°-Preview (Pannellum + MapillaryJS), **Papierkorb**, **Weltkarte** (Trash ausgeschlossen)
+- **Classic-Region**, **Daily ChronoPin** („Play Daily Challenge“ / „Spin the wheel for loot“) + Glücksrad, **Stash**, 3 Herzen pro Run
+- Panorama-Bibliothek: 360°-Preview (Pannellum + MapillaryJS), Anbieter-Tags, **`new`-Badge`
 - Pixel-Avatar-Editor (LPC), ChronoPin-Logo, Credits-Overlay
 
 **Login & Account**
 - **Login-Maske** beim Start — Name eingeben (neu = neuer Spieler, bekannt = Welcome back / Reclaim auf neuem Gerät)
 - **Sofort-Login:** Profil wird lokal gespeichert, UI reagiert sofort — Firebase-Sync läuft im Hintergrund (kein Hängen mehr)
 - Firebase **`loginNames`** für eindeutige Namen · **6s Timeout** + Offline-Fallback bei langsamem Firebase
-- **Admin-Panel** (⚙) für Spieler **Admin**, **Dary**, **Daryoush**: Spieler löschen, Stash-Items & Bonus-Herzen vergeben
+- **Admin-Panel** (⚙) für Spieler **Admin**, **Dary**, **Daryoush**: Spieler löschen, Stash-Items & Bonus-Herzen vergeben · Tab **Zur Überprüfung** für gemeldete Panos
 - **Factory Reset** in Player Info (Test)
 
 **Social & Friends (Firebase + Offline)**
@@ -39,7 +42,8 @@ Guess **where** you are. In time modes, also guess **when**.
 - Freundesliste, Chat (lokal), Online-Status · Suche behält Fokus beim Tippen
 - Multiplayer: **Gegner aus Freundesliste wählen**
 
-**Multiplayer — Co-op Decide (2 Spieler, Firebase)**
+**Multiplayer — Co-op Decide (2 Spieler, Firebase)** ✅
+- Home → **Multiplayer** → Freund wählen → **Co-op Decide** (immer spielbar — nur 1v1/BR „Soon“)
 - **Live** + **Async** · Classic / Past / Future
 - Ablauf: Invite → Accept → blind pin → Reveal → Team-Vote → Ergebnis
 - **Firestore-Sync** (`coopRooms`, `coopInvites`) · Host-Banner **Start game** auf Home
@@ -61,8 +65,7 @@ Guess **where** you are. In time modes, also guess **when**.
 
 - 1v1 Duel & Battle Royale — UI only („Coming soon“)
 - Social-DMs nur lokal (kein Firestore-Chat zwischen Freunden)
-- Keine Loading-Spinner für Pano/Map
-- MapLibre-Bundle groß (~1,6 MB JS) — lazy load später
+- MapLibre-Bundle groß (~1,7 MB JS) — lazy load später
 
 ### Kürzlich behoben (Polish-Pass)
 
@@ -73,6 +76,8 @@ Guess **where** you are. In time modes, also guess **when**.
 - **Co-op Spiele löschen** (Games-Tab + Wartebildschirm)
 - Demo-/Prototype-Texte aus UI entfernt · Daily nutzt 3 Herzen
 - Firestore composite indexes (`firestore.indexes.json`)
+- **Co-op Decide** zeigte fälschlich „Coming soon“ ohne Freund — behoben (Badge: Pick friend / Play)
+- **Panorama melden** + Admin-Review-Queue + Länder-Untergruppen in Library + Loading-Overlay
 
 ---
 
@@ -108,7 +113,7 @@ Guess **where** you are. In time modes, also guess **when**.
 **QoL & Polish**
 - Einheitliche **Sprache** EN (i18n DE später)
 - **In-App Dialoge** für Confirm/Alert
-- **Loading / Error** für Panorama & MapLibre (offen)
+- ~~**Loading / Error** für Panorama~~ ✅ Spinner während Pannellum/Mapillary lädt · MapLibre-Loading noch offen
 - Spielregeln kurz im UI („>1.500 km oder >80 Jahre = Herz verloren“)
 - Modal-A11y: Escape, Focus-Trap, `prefers-reduced-motion`
 - MapLibre **lazy load** · kleinerer Bundle

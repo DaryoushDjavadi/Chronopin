@@ -25,6 +25,7 @@ Playable browser prototype under [`web/`](../web/). Validates core loop, Firebas
 | `coopInvites/{inviteId}` | Co-op game invites | Create/update + incoming listener |
 | `scoreboard/{searchName_mode}` | Global best scores per player/mode | On run end |
 | `panoramaRatings/{panoId}` | Shared difficulty rating (1–3★) per library scene | On rate + library open + login |
+| `panoramaReports/{panoId}` | User-reported broken/black panoramas | On report + admin review + login sync |
 
 **Auth:** Anonymous sign-in at bootstrap. `playerId` = Firebase `uid`.
 
@@ -124,10 +125,10 @@ Local-only meta — stored in `chronopin-progression` (`xp`, `lifetimeXp`). Not 
 |---|---|
 | Onboarding / Login | Name entry only (`renderOnboarding`) |
 | Home | Solo/Multi tabs, daily, social, co-op banners, level badge on player chip |
-| Explore / Guess | Solo or co-op (`isCoopRun`); round intro overlay on explore |
+| Explore / Guess | Solo or co-op (`isCoopRun`); round intro overlay on explore; **report button** (⚠) top-right; **pano loading spinner** |
 | Result / Game over | XP gain banner |
 | Co-op Wait / Reveal / Vote / Result | Multiplayer phases; live polling on wait/reveal/vote |
-| Library / Library View / Library Map | Trash excluded from map pins; **accordion groups** by source tag (wikimedia / panoramax / mapillary / kartaview) |
+| Library / Library View / Library Map | Trash excluded from map pins; **accordion by source** → **country** sub-groups; collapsible trash section |
 | Player Info | Stats, avatar edit, stash, **Level & XP**, **Factory Reset** |
 
 **Overlays:** Social, Co-op setup, Credits, Classic region, Daily wheel, Inventory (solo), Match chat (co-op), Admin (⚙), Round intro, **Mapillary Live settings**.
@@ -140,7 +141,11 @@ Local-only meta — stored in `chronopin-progression` (`xp`, `lifetimeXp`). Not 
 
 **Mapillary Live (optional):** When `VITE_MAPILLARY_ACCESS_TOKEN` is set and library toggle is ON, **61** virtual entries are merged from `data/mapillary-live-spots.ts`. Each resolves a nearby 360° image via Mapillary Graph API; thumbnails cached in `localStorage`. Preview uses MapillaryJS, not Pannellum.
 
-**UI grouping:** `lib/library.ts` → `groupVisiblePanoramasBySource()` renders collapsible sections. Expand state: `chronopin-library-groups`.
+**UI grouping:** `lib/library.ts` → `groupVisiblePanoramasBySource()` + `groupItemsByCountry()` — two-level accordion (source → country). Expand state: `chronopin-library-groups`, `chronopin-library-countries`. Trash section: `chronopin-library-trash-expanded`.
+
+**Reporting:** `lib/pano-reports.ts` + `lib/firebase-pano-reports.ts` — players report broken/black scenes from explore/result. Solo explore: `skipBrokenRoundAfterReport()` loads next scene without heart/score penalty. Admins review in library tab **Zur Überprüfung** (keep or trash).
+
+**Loading UI:** `lib/pano-loading-ui.ts` — overlay spinner while Pannellum/MapillaryJS initializes (avoids black screen).
 
 **Difficulty ratings:** `lib/pano-ratings.ts` + `lib/firebase-pano-ratings.ts` — 1–3★ per `panoId`; sync on login and library open.
 
@@ -170,6 +175,8 @@ web/src/
 │   ├── firebase.ts, firebase-auth.ts, firebase-profile.ts
 │   ├── firebase-friends.ts, firebase-coop.ts, firebase-social.ts
 │   ├── firebase-match-chat.ts, firebase-scoreboard.ts, firebase-pano-ratings.ts
+│   ├── firebase-pano-reports.ts
+│   ├── pano-reports.ts, pano-loading-ui.ts
 │   ├── mapillary-api.ts, mapillary-viewer.ts, mapillary-live-catalog.ts, mapillary-live-ui.ts
 │   ├── coop-ui.ts, match-chat-ui.ts, social-ui.ts
 │   ├── avatar-compose.ts, avatar-editor-ui.ts
@@ -196,6 +203,10 @@ web/scripts/
 | `chronopin-coop-rooms` / `coop-invites` / `coop-active` | Co-op state |
 | `chronopin-trashed-panos` / `seen-panos` | Library |
 | `chronopin-library-groups` | Accordion expand state per source tag |
+| `chronopin-library-countries` | Accordion expand state per country within source |
+| `chronopin-library-trash-expanded` | Trash section open/closed |
+| `chronopin-pano-reports` | Cached panorama report records (admin queue) |
+| `chronopin-pano-reports-sent` | Pano IDs this player already reported |
 | `chronopin-pano-ratings` | Panorama difficulty cache (1–3★); synced to Firestore `panoramaRatings` when signed in |
 | `chronopin-mapillary-live-cache` | Resolved Mapillary image IDs + thumbs per city seed |
 | `chronopin-mapillary-live-prefs` | Mapillary Live library/gameplay toggles |
@@ -237,7 +248,7 @@ Writes use `safeStorageSet()` — fails silently on quota/private mode.
 
 ## Admin panel
 
-Players named **Admin**, **Dary**, or **Daryoush** get ⚙ on Home → search cloud players, grant stash items / bonus hearts, delete accounts. Requires `isAdminUser()` in deployed Firestore rules.
+Players named **Admin**, **Dary**, or **Daryoush** get ⚙ on Home → search cloud players, grant stash items / bonus hearts, delete accounts. Library tab **Zur Überprüfung** lists pending `panoramaReports` — keep (dismiss) or trash scene. Requires `isAdminUser()` in deployed Firestore rules.
 
 ---
 
@@ -249,7 +260,7 @@ Players named **Admin**, **Dary**, or **Daryoush** get ⚙ on Home → search cl
 | Friend DMs | localStorage only (no Firestore friend chat) |
 | XP / level cloud sync | Local only |
 | Level perks | Placeholder text only — no gameplay effect yet |
-| Pano/map loading UI | None (blank until loaded) |
+| Pano/map loading UI | Spinner overlay while viewer initializes (`pano-loading-ui.ts`) |
 | Mapillary Live | Requires client token; API rate/coverage varies by city; verify Mapillary ToS for commercial game |
 | Bundle size | ~1.7 MB JS + MapillaryJS chunk when live viewer loads |
 

@@ -46,7 +46,7 @@ Without Firebase (no `.env`), everything runs offline in `localStorage`.
 
 ## Multiplayer — Co-op Decide ✅
 
-Home → **Multiplayer** → pick a friend → **Co-op Decide**
+Home → **Multiplayer** → pick a friend → **Co-op Decide** (always available when a friend is selected — only 1v1 Duel / Battle Royale show “coming soon”)
 
 | Mode | Behaviour |
 |---|---|
@@ -103,17 +103,21 @@ Players named **Admin**, **Dary**, or **Daryoush** see a ⚙ button on Home:
 - Search cloud players
 - Grant stash items or bonus hearts for next run
 - Delete player accounts (loginNames + profile + scoreboard)
+- **Review reported panoramas** — tab **Zur Überprüfung**: keep scene or move to trash (syncs `panoramaReports`)
 
 Requires deployed Firestore rules with `isAdminUser()`.
 
 ## Panorama Library
 
 - **83 static scenes** (Wikimedia + Panoramax + KartaView) under `web/public/panoramas/`
-- **Collapsible groups** by source tag — tap **wikimedia**, **panoramax**, **mapillary**, or **kartaview** to expand/collapse (state saved in `localStorage`)
+- **Collapsible groups** by source tag — tap **wikimedia**, **panoramax**, **mapillary**, or **kartaview** to expand/collapse
+- **Country sub-groups** under each source (e.g. Germany, France) — nested accordion; state in `chronopin-library-countries`
+- **Trash** — collapsible section at bottom; hidden from gameplay and world map (`chronopin-library-trash-expanded`)
+- **Report scene** (⚠ top-right on explore/result) — broken/black panos; solo explore skips to next scene **without losing a heart**
 - **Difficulty stars** (1–3★) per scene — local cache + Firestore `panoramaRatings` when signed in
-- **Trash** — hidden from gameplay and world map
 - **🌍 World map** — active scenes only (trash excluded)
 - 360° preview: Pannellum (static JPGs) · MapillaryJS (live stream entries)
+- **Loading overlay** while panorama tiles stream (`lib/pano-loading-ui.ts`)
 
 ### Mapillary Live (optional)
 
@@ -166,6 +170,7 @@ npx -y firebase-tools@latest deploy --only firestore
 | `coopInvites/{id}` | Pending game invites |
 | `scoreboard/{searchName_mode}` | Global best scores |
 | `panoramaRatings/{panoId}` | Shared difficulty rating (1–3★) per library scene |
+| `panoramaReports/{panoId}` | User-reported broken/black scenes — admin review queue |
 
 Modules: `src/lib/firebase*.ts`, `src/lib/login.ts`, `src/lib/admin*.ts`
 
@@ -191,6 +196,9 @@ src/
 ├── lib/progression.ts       # XP, levels, badges
 ├── lib/pano-ratings.ts       # Local difficulty cache + sync
 ├── lib/firebase-pano-ratings.ts
+├── lib/pano-reports.ts       # Report broken panos + admin review
+├── lib/firebase-pano-reports.ts
+├── lib/pano-loading-ui.ts    # Spinner while panorama loads
 ├── lib/mapillary-api.ts      # Mapillary Graph API lookup
 ├── lib/mapillary-viewer.ts   # MapillaryJS lazy viewer
 ├── lib/mapillary-live-catalog.ts  # Live prefs, cache, library assets

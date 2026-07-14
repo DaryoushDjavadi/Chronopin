@@ -106,7 +106,7 @@ Deckt ab: Login → Freundschaft → Invite → beide pinnen → Reveal auf beid
 
 ## 6. Admin-Panel
 
-Als Spieler **Admin**, **Dary** oder **Daryoush** eingeloggt: ⚙ auf dem Home-Screen → Spieler suchen, Items/Herzen vergeben oder Account löschen.
+Als Spieler **Admin**, **Dary** oder **Daryoush** eingeloggt: ⚙ auf dem Home-Screen → Spieler suchen, Items/Herzen vergeben oder Account löschen. In der **Panorama Library** Tab **Zur Überprüfung** für gemeldete Szenen.
 
 ## 7. XP & Level (lokal)
 
@@ -118,13 +118,27 @@ Fortschritt (XP, Level, Perk-Vorschau) liegt in **localStorage** (`chronopin-pro
 
 Cloud-Sync für XP ist für später geplant.
 
-## 8. Panorama Library & Mapillary Live
+## 8. Panorama Library, Melden & Mapillary Live
 
 **Library** (Home → Panorama Library):
 
-- Szenen nach **Quelle** gruppiert (Wikimedia, Panoramax, Mapillary, KartaView) — Tag antippen zum Auf-/Zuklappen
+- Szenen nach **Quelle** gruppiert (Wikimedia, Panoramax, Mapillary, KartaView) — antippen zum Auf-/Zuklappen
+- Darunter **Länder** (Germany, France, …) — zweite Ebene, Zustand in `localStorage`
+- **Papierkorb** — eigener aufklappbarer Block unten; Szenen dort erscheinen nicht im Spiel / auf der Karte
 - **Schwierigkeit** mit 1–3 Sternen bewerten (sync mit Firestore wenn eingeloggt)
-- **Mapillary Live:** Home → 🌐 Mapillary Live → Library **ON** — 61 Städte als Live-Stream (MapillaryJS), Thumbnails werden beim ersten Öffnen geladen
+- **Mapillary Live:** Home → 🌐 Mapillary Live → Library **ON** — 61 Städte als Live-Stream (MapillaryJS)
+
+**Szene melden** (⚠ oben rechts während Explore/Result):
+
+- Schwarzes/defektes Panorama melden
+- **Solo:** nächste Szene ohne Herzverlust (kein Straf-Score)
+- Admins (**Admin**, **Dary**, **Daryoush**): Library → Tab **Zur Überprüfung** → behalten oder in Papierkorb
+
+Firestore-Collection `panoramaReports` — Rules mit deployen:
+
+```bash
+npx -y firebase-tools@latest deploy --only firestore
+```
 
 Ohne Mapillary-Token bleibt Mapillary Live deaktiviert; statische ~83 JPG-Szenen funktionieren weiter.
 
