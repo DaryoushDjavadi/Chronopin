@@ -11,6 +11,17 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    function ownsLoginName(searchName) {
+      return signedIn()
+        && searchName is string
+        && get(/databases/$(database)/documents/loginNames/$(searchName)).data.uid == request.auth.uid;
+    }
+
+    function isAdminUser() {
+      return signedIn()
+        && (ownsLoginName('admin') || ownsLoginName('dary') || ownsLoginName('daryoush'));
+    }
+
     function isCoopParticipant(data) {
       return signedIn()
         && (data.hostPlayerId == request.auth.uid
@@ -22,14 +33,23 @@ service cloud.firestore {
       return signedIn()
         && (data.fromPlayerId == request.auth.uid
             || data.toUid == request.auth.uid
-            || data.toFriendId == request.auth.uid);
+            || data.toFriendId == request.auth.uid
+            || (data.toSearchName is string && ownsLoginName(data.toSearchName)));
     }
 
     // Player profiles (search + avatar)
     match /users/{userId} {
       allow read: if signedIn();
-      allow create, update: if isOwner(userId);
-      allow delete: if false;
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId)
+        || (signedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['migratedTo'])
+            && request.resource.data.migratedTo == request.auth.uid
+            && resource.data.searchName is string
+            && ownsLoginName(resource.data.searchName))
+        || (isAdminUser()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bonusStash', 'bonusHeartsNextRun']));
+      allow delete: if isAdminUser();
     }
 
     // Unique login names → Firebase uid
@@ -37,21 +57,24 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
       allow update: if signedIn() && request.resource.data.uid == request.auth.uid;
-      allow delete: if false;
+      allow delete: if isAdminUser();
     }
 
     // Friend requests
     match /friendRequests/{requestId} {
       allow read: if signedIn()
         && (resource.data.fromUid == request.auth.uid
-            || resource.data.toUid == request.auth.uid);
+            || resource.data.toUid == request.auth.uid
+            || (resource.data.toSearchName is string && ownsLoginName(resource.data.toSearchName)));
       allow create: if signedIn()
         && request.resource.data.fromUid == request.auth.uid
         && request.resource.data.toUid is string
+        && request.resource.data.toSearchName is string
         && request.resource.data.status == 'pending';
       allow update: if signedIn()
         && (resource.data.toUid == request.auth.uid
-            || resource.data.fromUid == request.auth.uid);
+            || resource.data.fromUid == request.auth.uid
+            || (resource.data.toSearchName is string && ownsLoginName(resource.data.toSearchName)));
       allow delete: if false;
     }
 
@@ -98,6 +121,23 @@ service cloud.firestore {
       allow read, create: if signedIn()
         && chatId.matches('.*' + request.auth.uid + '.*');
       allow update, delete: if false;
+    }
+
+    // Global scoreboard — one best score per player per mode
+    match /scoreboard/{entryId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.playerId == request.auth.uid
+        && request.resource.data.searchName is string
+        && ownsLoginName(request.resource.data.searchName)
+        && request.resource.data.mode is string
+        && request.resource.data.score is number
+        && request.resource.data.rounds is number
+        && (!resource.exists()
+            || request.resource.data.score > resource.data.score
+            || (request.resource.data.score == resource.data.score
+                && request.resource.data.rounds >= resource.data.rounds));
+      allow delete: if isAdminUser();
     }
   }
 }

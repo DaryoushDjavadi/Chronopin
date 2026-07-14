@@ -260,9 +260,14 @@ export function getSocialBadgeCount(): number {
 export function searchUsers(query: string): DirectoryUser[] {
   const q = query.trim();
   if (q.length < 2) return [];
+  const profile = getProfile();
+  const myName = profile?.name.trim().toLowerCase() ?? '';
   const store = loadStore();
   return searchDirectoryUsers(q).filter(
-    (u) => !store.friendIds.includes(u.id) && !hasPendingOutgoingTo(u.id),
+    (u) =>
+      !store.friendIds.includes(u.id) &&
+      !hasPendingOutgoingTo(u.id) &&
+      u.name.trim().toLowerCase() !== myName,
   );
 }
 

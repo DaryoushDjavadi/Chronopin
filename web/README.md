@@ -2,6 +2,7 @@
 
 Playable browser prototype for the core geotime guessing loop (Solo + Co-op multiplayer). Mobile-first, deployable to static hosting or Firebase.
 
+**Live demo:** https://media-acht.de/Chrono/  
 **Roadmap & product context:** [root README](../README.md)
 
 ## Quick start
@@ -17,7 +18,7 @@ Open **http://localhost:5173** (fixed port via `strictPort`).
 
 ```bash
 npm run build          # production build → dist/
-npm run build:strato   # build for /app/Chrono/ subpath (Strato)
+npm run build:strato   # build for /Chrono/ subpath (Strato)
 npm run preview        # serve dist/ locally
 ```
 
@@ -25,7 +26,9 @@ npm run preview        # serve dist/ locally
 
 1. **Login screen** — enter your name (max 20 chars)
 2. New name → new player · existing name → welcome back (Firebase `loginNames`)
-3. Avatar & name editable later under **Player info**
+3. Same name on a **new device** reclaims your cloud profile automatically
+4. Avatar & name editable later under **Player info**
+5. Login has a **12s timeout** — falls back to offline if Firebase is slow
 
 Without Firebase (no `.env`), everything runs offline in `localStorage`.
 
@@ -35,7 +38,8 @@ Without Firebase (no `.env`), everything runs offline in `localStorage`.
 - Modes: **Classic** (region filter), **Past**, **Future**
 - **Daily ChronoPin** — one round per UTC day + reward wheel → stash
 - **Inventory:** binoculars, North Star (1× per item per round)
-- **Scoreboard** & **Player stats** (local)
+- **Scoreboard** (local + Firestore sync when online)
+- **Player stats** (local)
 
 ## Multiplayer — Co-op Decide ✅
 
@@ -64,6 +68,7 @@ Home → **Multiplayer** → pick a friend → **Co-op Decide**
 | Feature | Status |
 |---|---|
 | Search players by name (Firebase) | ✅ |
+| Deduped results, exclude self | ✅ |
 | Friend requests send/accept/decline | ✅ |
 | Friend list + profile stats | ✅ |
 | Chat per friend (local) | ✅ |
@@ -71,6 +76,16 @@ Home → **Multiplayer** → pick a friend → **Co-op Decide**
 | Cloud DM sync | 🔜 |
 
 Demo offline users (Max, Lena, Kai, Sam, Yuki) still work without Firebase.
+
+## Admin panel
+
+Players named **Admin**, **Dary**, or **Daryoush** see a ⚙ button on Home:
+
+- Search cloud players
+- Grant stash items or bonus hearts for next run
+- Delete player accounts (loginNames + profile + scoreboard)
+
+Requires deployed Firestore rules with `isAdminUser()`.
 
 ## Panorama Library
 
@@ -98,24 +113,25 @@ npx -y firebase-tools@latest login
 npx -y firebase-tools@latest deploy --only firestore
 ```
 
-4. **Authorized domains** — add your production domain
+4. **Authorized domains** — add `media-acht.de`
 
 | Firestore collection | Purpose |
 |---|---|
-| `users/{uid}` | Profile, avatar, searchName |
+| `users/{uid}` | Profile, avatar, searchName, admin bonuses |
 | `loginNames/{searchName}` | Unique display names → uid |
 | `friendRequests`, `friendships` | Social graph |
 | `coopRooms/{roomId}` | Live co-op state |
 | `coopRooms/{roomId}/messages` | In-match chat |
 | `coopInvites/{id}` | Pending game invites |
+| `scoreboard/{searchName_mode}` | Global best scores |
 
-Modules: `src/lib/firebase*.ts`, `src/lib/login.ts`
+Modules: `src/lib/firebase*.ts`, `src/lib/login.ts`, `src/lib/admin*.ts`
 
 ## Deploy
 
 | Target | Command / doc |
 |---|---|
-| **Strato webspace** | `npm run build:strato` → upload `dist/` — see [`../docs/STRATO_DEPLOY.md`](../docs/STRATO_DEPLOY.md) |
+| **Strato webspace** | `npm run build:strato` → `./scripts/deploy-strato.sh` — see [`../docs/STRATO_DEPLOY.md`](../docs/STRATO_DEPLOY.md) |
 | **Firebase Hosting** | `npm run build && firebase deploy --only hosting` |
 
 ## Key source files
@@ -126,7 +142,10 @@ src/
 ├── data/coop.ts            # Co-op rooms & phases
 ├── data/match-chat.ts      # In-match messages
 ├── data/social.ts          # Friends & local chat
-├── lib/login.ts            # Name login / registration
+├── lib/login.ts            # Name login / registration / reclaim
+├── lib/admin.ts            # Admin name check
+├── lib/admin-ui.ts         # Admin overlay
+├── lib/firebase-admin.ts   # Admin cloud actions
 ├── lib/coop-ui.ts          # Co-op + multiplayer UI
 ├── lib/match-chat-ui.ts    # Match chat overlay & toasts
 ├── lib/firebase-*.ts       # Auth, profile, friends, coop sync

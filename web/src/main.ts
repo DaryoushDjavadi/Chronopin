@@ -5,6 +5,7 @@ import { pickRound, modeLabel, modeDescription } from './data/rounds';
 import { renderAvatar } from './data/avatars';
 import {
   type AvatarCategory,
+  type AvatarConfig,
   configWithCategoryOption,
   configWithCustomColor,
   DEFAULT_AVATAR_CONFIG,
@@ -12,6 +13,7 @@ import {
   randomAvatarConfig,
 } from './data/lpc-catalog';
 import { hydrateAvatarCanvases } from './lib/avatar-animate';
+import { createMapPinMarker, mountMapPinMarker } from './lib/map-pin-avatar';
 import {
   renderAvatarEditorForm,
   renderAvatarEditorPanel,
@@ -80,7 +82,16 @@ import {
 } from './lib/daily';
 import { applyWheelReward, pickWeightedSegment, WHEEL_SEGMENTS } from './lib/daily-wheel';
 import { alertDialog, confirmDialog } from './lib/dialog-ui';
-import { renderSocialOverlayHtml } from './lib/social-ui';
+import { renderSocialOverlayHtml, renderSocialSearchResultsHtml } from './lib/social-ui';
+import { isAdminPlayer } from './lib/admin';
+import { renderAdminOverlayHtml } from './lib/admin-ui';
+import {
+  adminDeletePlayer,
+  adminGrantHearts,
+  adminGrantStash,
+  adminSearchPlayers,
+  type AdminPlayerRow,
+} from './lib/firebase-admin';
 import { getBinocularHint, getStarHint } from './lib/inventory-hints';
 import {
   formatDistance,
@@ -116,6 +127,7 @@ import { ensureFirebaseAuth, waitForFirebaseUid } from './lib/firebase-auth';
 import {
   pushProfileToFirestore,
   syncLocalProfileWithFirebase,
+  applyCloudPlayerBonuses,
 } from './lib/firebase-profile';
 import { subscribeCoopRoom, pullCoopRoomFromFirestore, pullCoopInviteFromFirestore } from './lib/firebase-coop';
 import { assetUrl } from './lib/asset-url';
@@ -147,6 +159,9 @@ import {
   clearScoreboard,
   formatScoreDate,
   getPersonalBest,
+  isScoreboardEntryMine,
+  isScoreboardCloudEnabled,
+  syncScoreboardFromCloud,
 } from './lib/scoreboard';
 import {
   getStats,
@@ -180,7 +195,7 @@ import {
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
 let state: AppState = {
-  screen: hasProfile() ? 'home' : 'onboarding',
+  screen: 'home',
   playType: 'solo',
   mode: null,
   round: null,
@@ -216,6 +231,11 @@ let state: AppState = {
   matchChatOpen: false,
   matchChatDraft: '',
   matchChatUnread: 0,
+  adminOpen: false,
+  adminQuery: '',
+  adminResults: [] as AdminPlayerRow[],
+  adminSelectedUid: null as string | null,
+  adminStatus: null as string | null,
 };
 
 let scoreSavedForSession = false;
@@ -232,6 +252,9 @@ let libraryMarkers: maplibregl.Marker[] = [];
 let libraryMapInitToken = 0;
 let coopRoomUnsub: (() => void) | null = null;
 let matchChatUnsub: (() => void) | null = null;
+let namePromptBound = false;
+let socialSearchTimer: ReturnType<typeof setTimeout> | null = null;
+let adminSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
 const app = document.getElementById('app')!;
 
@@ -264,8 +287,6 @@ function render(): void {
 
 function getScreenHtml(screen: Screen): string {
   switch (screen) {
-    case 'onboarding':
-      return renderOnboarding();
     case 'home':
       return renderHome();
     case 'explore':
@@ -294,6 +315,8 @@ function getScreenHtml(screen: Screen): string {
       return renderCoopVoteScreen();
     case 'coop-result':
       return renderCoopResultScreen();
+    case 'onboarding':
+      return renderHome();
   }
 }
 
@@ -301,7 +324,9 @@ function renderHome(): string {
   const modes: GameMode[] = ['classic', 'past', 'future'];
   const modeIcons = { classic: '📍', past: '⏳', future: '🚀' };
   const panoCount = getVisiblePanoramas().length;
-  const profile = getProfile()!;
+  const profile = getProfile();
+  const avatarConfig = profile?.avatarConfig ?? state.avatarConfig;
+  const displayName = profile?.name ?? 'Player';
   const pendingSocial = getPendingRequestCount();
   const soloActive = state.playType === 'solo';
   const incomingCoop = getCloudIncomingCoopInvites();
@@ -346,13 +371,14 @@ function renderHome(): string {
       <header class="hero">
         <div class="hero-profile-row">
           <button class="player-chip" data-action="player-info" aria-label="Player info">
-            ${renderAvatar(profile.avatarConfig, 'avatar avatar-lg avatar-idle')}
-            <span class="player-name">${escapeHtml(profile.name)}</span>
+            ${renderAvatar(avatarConfig, 'avatar avatar-lg avatar-idle')}
+            <span class="player-name">${escapeHtml(displayName)}</span>
           </button>
           <button class="social-btn icon-btn" data-action="social" aria-label="Friends and social">
             <span class="social-btn-icon" aria-hidden="true">👥</span>
             ${pendingSocial > 0 ? `<span class="social-btn-badge">${pendingSocial}</span>` : ''}
           </button>
+          ${isAdminPlayer() ? `<button class="icon-btn admin-btn" data-action="admin" aria-label="Admin panel" title="Admin">⚙</button>` : ''}
         </div>
         <img
           class="app-logo"
@@ -428,6 +454,7 @@ function renderHome(): string {
         <p class="footer-note">Map: MapLibre + OpenFreeMap · Panoramas: Wikimedia, Panoramax &amp; more</p>
         <button type="button" class="credits-chip" data-action="credits">Attributes / Credits</button>
       </footer>
+      ${renderNamePromptOverlay()}
       ${renderSocialOverlay()}
       ${renderCoopSetup()}
       ${renderCreditsOverlay()}
@@ -575,8 +602,7 @@ function bindDailyEventsOnce(): void {
 function startDailyGame(): void {
   if (!canPlayDaily()) return;
   if (!hasProfile()) {
-    state.screen = 'onboarding';
-    render();
+    promptForName();
     return;
   }
   const round = pickDailyRound();
@@ -647,24 +673,14 @@ function renderAvatarEditor(defaultName: string, submitLabel: string): string {
   );
 }
 
-function renderOnboarding(): string {
+function renderNamePromptOverlay(): string {
+  if (hasProfile()) return '';
   return `
-    <div class="screen screen-onboarding screen-login">
-      <div class="onboarding-card login-card">
-        <img
-          class="login-logo"
-          src="${assetUrl('/ChronoPinLogo.png')}"
-          alt="ChronoPin"
-          width="120"
-          height="120"
-          decoding="async"
-        />
-        <div class="onboarding-header login-header">
-          <h1>ChronoPin</h1>
-          <p>Enter your name to start playing.</p>
-        </div>
-        <form class="login-form" data-action="login-form">
-          <label class="field-label" for="login-name">Your name</label>
+    <div class="name-prompt-overlay open" data-name-prompt aria-modal="true" role="dialog" aria-label="Enter your name">
+      <div class="name-prompt-card">
+        <h2>What's your name?</h2>
+        <p class="name-prompt-sub">Saved on this device — skip next time you visit.</p>
+        <form class="name-prompt-form" data-action="login-form">
           <input
             id="login-name"
             class="login-input"
@@ -678,10 +694,39 @@ function renderOnboarding(): string {
           <p class="login-error" data-login-error role="alert"></p>
           <button type="submit" class="btn btn-primary btn-lg login-submit">Continue</button>
         </form>
-        <p class="login-hint">New name → new player · existing name → welcome back</p>
       </div>
-    </div>
-  `;
+    </div>`;
+}
+
+function promptForName(): void {
+  state.screen = 'home';
+  render();
+}
+
+async function completeNameSetup(
+  result: Extract<Awaited<ReturnType<typeof loginWithName>>, { ok: true }>,
+): Promise<void> {
+  state.avatarConfig = normalizeAvatarConfig(result.profile.avatarConfig);
+  render();
+  if (result.authWarning) {
+    void alertDialog(result.authWarning, 'Online mode unavailable');
+  }
+  if (isFirebaseConfigured() && !result.offline) {
+    void (async () => {
+      try {
+        const uid = await waitForFirebaseUid();
+        if (uid) await applyCloudPlayerBonuses(uid);
+        await syncSocialFromCloud();
+        await syncScoreboardFromCloud();
+        startCloudCoopInviteListener(() => {
+          if (state.screen === 'home') render();
+          else if (state.socialOpen) patchHomeOverlays();
+        });
+      } catch (err) {
+        console.warn('[ChronoPin] Post-login cloud sync failed:', err);
+      }
+    })();
+  }
 }
 
 function renderPlayerInfo(): string {
@@ -785,7 +830,7 @@ function renderPlayerInfo(): string {
 
       <section class="stats-panel danger-panel">
         <h3>Testing</h3>
-        <p class="hint">Wipe all local data and return to the login screen — like opening the app for the first time.</p>
+        <p class="hint">Wipe all local data — you'll be asked for your name again.</p>
         <button type="button" class="btn btn-danger" data-action="factory-reset">Factory Reset</button>
       </section>
     </div>
@@ -806,10 +851,10 @@ function renderScoreboard(): string {
   return `
     <div class="screen screen-scoreboard">
       <div class="library-header">
-        <button class="icon-btn" data-action="home" aria-label="Home">←</button>
+        <button class="icon-btn" data-action="scoreboard-back" aria-label="Back">←</button>
         <div>
           <h2>Scoreboard</h2>
-          <p>Scores saved on this device</p>
+          <p>${isScoreboardCloudEnabled() ? 'Global best scores (online)' : 'Best scores on this device'}</p>
         </div>
       </div>
 
@@ -839,7 +884,7 @@ function renderScoreboard(): string {
           : `<ol class="scoreboard-list">
               ${entries
                 .map((e, i) => {
-                  const isYou = profile && e.playerName === profile.name;
+                  const isYou = isScoreboardEntryMine(e);
                   return `
                 <li class="scoreboard-row ${isYou ? 'scoreboard-you' : ''}">
                   <span class="score-rank">${i + 1}</span>
@@ -857,7 +902,7 @@ function renderScoreboard(): string {
 
       ${
         entries.length > 0
-          ? `<button class="btn btn-secondary scoreboard-clear" data-action="clear-scores">Clear scoreboard</button>`
+          ? `<button class="btn btn-secondary scoreboard-clear" data-action="clear-scores">Clear local scores</button>`
           : ''
       }
     </div>
@@ -1045,7 +1090,64 @@ function patchMultiplayerPanel(): void {
   }
 }
 
+function patchSocialSearchResults(): void {
+  const slot = app.querySelector('[data-social-search-slot]');
+  if (!slot) return;
+  slot.innerHTML = renderSocialSearchResultsHtml(
+    state.socialAddNameDraft,
+    state.socialCloudSearch,
+  );
+}
+
+function scheduleAdminSearch(term: string): void {
+  if (adminSearchTimer) clearTimeout(adminSearchTimer);
+  adminSearchTimer = setTimeout(() => {
+    adminSearchTimer = null;
+    if (!state.adminOpen) return;
+    void adminSearchPlayers(term).then((rows) => {
+      state.adminResults = rows;
+      if (!state.adminSelectedUid && rows[0]) state.adminSelectedUid = rows[0].uid;
+      patchHomeOverlays();
+    });
+  }, 280);
+}
+
+function setAdminOpen(open: boolean): void {
+  state.adminOpen = open;
+  if (open && !state.adminQuery && getProfile()) {
+    state.adminQuery = '';
+    state.adminResults = [];
+    state.adminSelectedUid = null;
+    state.adminStatus = null;
+  }
+  if (!open) {
+    state.adminStatus = null;
+  }
+  if (state.screen === 'home') patchHomeOverlays();
+}
+
+function scheduleSocialCloudSearch(term: string): void {
+  if (socialSearchTimer) clearTimeout(socialSearchTimer);
+  socialSearchTimer = setTimeout(() => {
+    socialSearchTimer = null;
+    if (!state.socialOpen || state.socialTab !== 'add') return;
+    void waitForFirebaseUid().then((uid) => {
+      if (!uid) return [];
+      const myName = getProfile()?.name.trim().toLowerCase() ?? '';
+      return searchFirestoreUsersByName(term, uid, myName);
+    }).then((hits) => {
+      state.socialCloudSearch = hits ?? [];
+      patchSocialSearchResults();
+    });
+  }, 320);
+}
+
 function patchHomeOverlays(): void {
+  const activeId = document.activeElement?.id ?? null;
+  const activeInput =
+    document.activeElement instanceof HTMLInputElement ? document.activeElement : null;
+  const activeSel = activeInput?.selectionStart ?? null;
+
   captureSocialFormState();
   const screen = app.querySelector('.screen-home');
   if (!screen) return;
@@ -1077,6 +1179,16 @@ function patchHomeOverlays(): void {
   if (coopEl) coopEl.outerHTML = coopHtml;
   else screen.insertAdjacentHTML('beforeend', coopHtml);
 
+  const adminHtml = renderAdminOverlayHtml(
+    state.adminOpen,
+    state.adminQuery,
+    state.adminResults,
+    state.adminSelectedUid,
+    state.adminStatus,
+  );
+  screen.querySelectorAll('[data-admin-overlay]').forEach((el) => el.remove());
+  if (adminHtml) screen.insertAdjacentHTML('beforeend', adminHtml);
+
   const badge = screen.querySelector('.social-btn-badge');
   const pending = getPendingRequestCount();
   const btn = screen.querySelector('[data-action="social"]');
@@ -1098,6 +1210,15 @@ function patchHomeOverlays(): void {
   if (log) log.scrollTop = log.scrollHeight;
   syncSocialOnlineTimer();
   if (state.playType === 'multiplayer') patchMultiplayerPanel();
+
+  if (activeId === 'social-add-name' || activeId === 'admin-search') {
+    const input = app.querySelector<HTMLInputElement>(`#${activeId}`);
+    if (input) {
+      input.focus();
+      const pos = activeSel ?? input.value.length;
+      input.setSelectionRange(pos, pos);
+    }
+  }
 }
 
 function patchSocialOnlineStatus(): void {
@@ -1150,6 +1271,7 @@ function closeHomeOverlays(): void {
   state.creditsOpen = false;
   state.classicSetupOpen = false;
   state.coopSetupOpen = false;
+  state.adminOpen = false;
   state.socialView = 'list';
   state.socialSelectedFriendId = null;
   state.socialMessageDraft = '';
@@ -1162,6 +1284,23 @@ function navigateFromHome(screen: Screen): void {
   closeHomeOverlays();
   state.screen = screen;
   render();
+  if (screen === 'scoreboard') refreshScoreboardCloud();
+}
+
+function leaveScoreboard(): void {
+  if (state.session) {
+    goHome();
+    return;
+  }
+  state.screen = 'home';
+  render();
+}
+
+function refreshScoreboardCloud(): void {
+  if (!isFirebaseConfigured()) return;
+  void syncScoreboardFromCloud().then(() => {
+    if (state.screen === 'scoreboard') render();
+  });
 }
 
 function resolveLibraryIndex(): number {
@@ -1212,6 +1351,86 @@ function bindSocialEventsOnce(): void {
       return;
     }
 
+    if (target.closest('[data-action="admin"]')) {
+      if (state.screen === 'home' && isAdminPlayer()) {
+        e.preventDefault();
+        setAdminOpen(!state.adminOpen);
+      }
+      return;
+    }
+
+    if (target.closest('[data-action="close-admin"]')) {
+      e.preventDefault();
+      setAdminOpen(false);
+      return;
+    }
+
+    if (target.closest('[data-action="admin-pick"]')) {
+      const uid = (target.closest('[data-action="admin-pick"]') as HTMLElement).dataset.uid;
+      if (uid) {
+        state.adminSelectedUid = uid;
+        patchHomeOverlays();
+      }
+      return;
+    }
+
+    if (target.closest('[data-action="admin-grant-item"]')) {
+      const selected = state.adminResults.find((r) => r.uid === state.adminSelectedUid);
+      const panel = target.closest('[data-admin-overlay]');
+      const itemEl = panel?.querySelector<HTMLSelectElement>('[data-admin-item]');
+      const amountEl = panel?.querySelector<HTMLInputElement>('[data-admin-amount]');
+      if (!selected || !itemEl || !amountEl) return;
+      void adminGrantStash(
+        selected.searchName,
+        itemEl.value as import('./data/inventory').InventoryItemId,
+        Number(amountEl.value) || 1,
+      ).then(() => {
+        state.adminStatus = `Granted ${amountEl.value}× ${itemEl.value} to ${selected.name}.`;
+        patchHomeOverlays();
+      }).catch((err) => {
+        state.adminStatus = err instanceof Error ? err.message : 'Grant failed.';
+        patchHomeOverlays();
+      });
+      return;
+    }
+
+    if (target.closest('[data-action="admin-grant-hearts"]')) {
+      const selected = state.adminResults.find((r) => r.uid === state.adminSelectedUid);
+      if (!selected) return;
+      void adminGrantHearts(selected.searchName, 1).then(() => {
+        state.adminStatus = `+1 bonus heart queued for ${selected.name}.`;
+        patchHomeOverlays();
+      }).catch((err) => {
+        state.adminStatus = err instanceof Error ? err.message : 'Grant failed.';
+        patchHomeOverlays();
+      });
+      return;
+    }
+
+    if (target.closest('[data-action="admin-delete-player"]')) {
+      const btn = target.closest('[data-action="admin-delete-player"]') as HTMLElement;
+      const name = btn.dataset.name ?? '';
+      void (async () => {
+        const ok = await confirmDialog(
+          `Delete account "${name}" from cloud? They can register again with the same name.`,
+          { title: 'Delete player', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true },
+        );
+        if (!ok) return;
+        try {
+          await adminDeletePlayer(name);
+          state.adminStatus = `Deleted ${name}.`;
+          state.adminResults = state.adminResults.filter(
+            (r) => r.name.toLowerCase() !== name.toLowerCase(),
+          );
+          patchHomeOverlays();
+        } catch (err) {
+          state.adminStatus = err instanceof Error ? err.message : 'Delete failed.';
+          patchHomeOverlays();
+        }
+      })();
+      return;
+    }
+
     if (target.closest('[data-action="credits"]')) {
       if (state.screen === 'home') {
         e.preventDefault();
@@ -1231,8 +1450,7 @@ function bindSocialEventsOnce(): void {
       if (state.screen === 'home') {
         e.preventDefault();
         if (!hasProfile()) {
-          state.screen = 'onboarding';
-          render();
+          promptForName();
           return;
         }
         setClassicSetupOpen(true);
@@ -1294,7 +1512,10 @@ function bindSocialEventsOnce(): void {
     if (acceptBtn && state.socialOpen) {
       const requestId = acceptBtn.dataset.request ?? '';
       if (requestId.startsWith('fr-')) {
-        void acceptFirestoreFriendRequest(requestId).then(() => syncSocialFromCloud()).then(() => {
+        void acceptFirestoreFriendRequest(
+          requestId,
+          getProfile()?.name.trim().toLowerCase(),
+        ).then(() => syncSocialFromCloud()).then(() => {
           showSocialToast('Request accepted — say hi!');
           patchHomeOverlays();
         });
@@ -1330,6 +1551,10 @@ function bindSocialEventsOnce(): void {
         );
         const hit = exact ?? state.socialCloudSearch[0];
         if (hit) {
+          if (hit.name.trim().toLowerCase() === profile.name.trim().toLowerCase()) {
+            showSocialToast("That's you — pick someone else.");
+            return;
+          }
           void sendFirestoreFriendRequest(hit.uid, hit.name, profile.name, profile.avatarConfig).then(
             (id) => {
               if (id) {
@@ -1368,14 +1593,24 @@ function bindSocialEventsOnce(): void {
       const profile = getProfile();
       if (source === 'cloud' && userId && profile) {
         const name = sendToBtn.dataset.name ?? 'Player';
-        void sendFirestoreFriendRequest(
-          userId,
-          name,
-          profile.name,
-          profile.avatarConfig,
-        ).then((id) => {
-          if (id) showSocialToast(`Request sent to ${name}!`);
-          else showSocialToast('Could not send request.');
+        if (name.trim().toLowerCase() === profile.name.trim().toLowerCase()) {
+          showSocialToast("That's you — pick someone else.");
+          return;
+        }
+        void waitForFirebaseUid().then((uid) => {
+          if (uid === userId) {
+            showSocialToast("That's you — pick someone else.");
+            return;
+          }
+          void sendFirestoreFriendRequest(
+            userId,
+            name,
+            profile.name,
+            profile.avatarConfig,
+          ).then((id) => {
+            if (id) showSocialToast(`Request sent to ${name}!`);
+            else showSocialToast('Could not send request.');
+          });
         });
       } else if (userId) {
         const user = getDirectoryUser(userId);
@@ -1384,6 +1619,7 @@ function bindSocialEventsOnce(): void {
           if (result === 'sent') showSocialToast(`Request sent to ${user.name}!`);
           else if (result === 'already_friend') showSocialToast('Already friends!');
           else if (result === 'already_sent') showSocialToast('Request already pending.');
+          else if (result === 'self') showSocialToast("That's you — pick someone else.");
           patchHomeOverlays();
         }
       }
@@ -1490,8 +1726,7 @@ function bindSocialEventsOnce(): void {
 
     if (target.closest('[data-action="coop-decide"]') && state.screen === 'home') {
       if (!hasProfile()) {
-        state.screen = 'onboarding';
-        render();
+        promptForName();
         return;
       }
       if (!state.coopSetupFriendId) {
@@ -1513,11 +1748,12 @@ function bindSocialEventsOnce(): void {
     if (target.id === 'social-add-name') {
       state.socialAddNameDraft = target.value;
       if (state.socialOpen && state.socialTab === 'add') {
-        void searchFirestoreUsersByName(target.value, getPlayerId()).then((hits) => {
-          state.socialCloudSearch = hits;
-          patchHomeOverlays();
-        });
+        scheduleSocialCloudSearch(target.value);
       }
+    }
+    if (target.id === 'admin-search') {
+      state.adminQuery = target.value;
+      if (state.adminOpen) scheduleAdminSearch(target.value);
     }
   });
 
@@ -1529,6 +1765,9 @@ function bindSocialEventsOnce(): void {
     } else if (state.socialOpen) {
       e.preventDefault();
       setSocialOpen(false);
+    } else if (state.adminOpen) {
+      e.preventDefault();
+      setAdminOpen(false);
     } else if (state.creditsOpen) {
       e.preventDefault();
       setCreditsOpen(false);
@@ -1874,7 +2113,6 @@ function renderLibraryView(): string {
 }
 
 function bindScreenEvents(screen: Screen): void {
-  if (screen === 'onboarding') bindLoginEvents();
   if (screen === 'player-info') bindProfileFormEvents();
   if (screen === 'home') bindHomeEvents();
   if (screen === 'explore') bindExploreEvents();
@@ -2066,9 +2304,13 @@ function sendCurrentMatchChat(text: string): void {
   patchMatchChatOverlay();
 }
 
-function bindLoginEvents(): void {
-  const form = app.querySelector('[data-action="login-form"]');
-  form?.addEventListener('submit', (e) => {
+function bindNamePromptEvents(): void {
+  if (namePromptBound) return;
+  namePromptBound = true;
+
+  app.addEventListener('submit', (e) => {
+    const form = (e.target as Element).closest('[data-action="login-form"]');
+    if (!form) return;
     e.preventDefault();
     const input = app.querySelector('#login-name') as HTMLInputElement | null;
     const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]');
@@ -2077,35 +2319,24 @@ function bindLoginEvents(): void {
 
     void (async () => {
       submitBtn.disabled = true;
+      submitBtn.textContent = 'Loading…';
       if (errEl) errEl.textContent = '';
 
-      const result = await loginWithName(input.value);
-      if (!result.ok) {
-        if (errEl) errEl.textContent = result.error;
-        submitBtn.disabled = false;
-        return;
-      }
-
-      state.avatarConfig = normalizeAvatarConfig(result.profile.avatarConfig);
-      if (isFirebaseConfigured()) {
-        try {
-          await syncSocialFromCloud();
-          startCloudCoopInviteListener(() => {
-            if (state.screen === 'home') render();
-            else if (state.socialOpen) patchHomeOverlays();
-          });
-        } catch (err) {
-          console.warn('[ChronoPin] Post-login cloud sync failed:', err);
+      try {
+        const result = await loginWithName(input.value);
+        if (!result.ok) {
+          if (errEl) errEl.textContent = result.error;
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Continue';
+          return;
         }
+        await completeNameSetup(result);
+      } catch (err) {
+        if (errEl) errEl.textContent = 'Something went wrong — try again.';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continue';
       }
-
-      state.screen = 'home';
-      render();
     })();
-  });
-
-  requestAnimationFrame(() => {
-    app.querySelector<HTMLInputElement>('#login-name')?.focus();
   });
 }
 
@@ -2165,7 +2396,7 @@ function resetStateForLogin(): void {
   scoreSavedForSession = false;
   gameStatsRecorded = false;
   state = {
-    screen: 'onboarding',
+    screen: 'home',
     playType: 'solo',
     mode: null,
     round: null,
@@ -2201,6 +2432,11 @@ function resetStateForLogin(): void {
     matchChatOpen: false,
     matchChatDraft: '',
     matchChatUnread: 0,
+    adminOpen: false,
+    adminQuery: '',
+    adminResults: [],
+    adminSelectedUid: null,
+    adminStatus: null,
   };
 }
 
@@ -2383,9 +2619,9 @@ function dismissHint(): void {
 }
 
 function bindScoreboardEvents(): void {
-  app.querySelector('[data-action="home"]')?.addEventListener('click', goHome);
+  app.querySelector('[data-action="scoreboard-back"]')?.addEventListener('click', leaveScoreboard);
 
-  app.querySelectorAll('[data-filter]').forEach((btn) => {
+  app.querySelectorAll('.scoreboard-filters [data-filter]').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.scoreboardFilter = (btn as HTMLElement).dataset.filter as GameMode | 'all';
       render();
@@ -2409,6 +2645,14 @@ function bindScoreboardEvents(): void {
 }
 
 function bindHomeEvents(): void {
+  bindNamePromptEvents();
+
+  if (!hasProfile()) {
+    requestAnimationFrame(() => {
+      app.querySelector<HTMLInputElement>('#login-name')?.focus();
+    });
+  }
+
   app.querySelectorAll('.segmented-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const play = (btn as HTMLElement).dataset.play as 'solo' | 'multiplayer';
@@ -2435,8 +2679,7 @@ function bindHomeEvents(): void {
   app.querySelectorAll('[data-action="start-mode"]').forEach((card) => {
     card.addEventListener('click', () => {
       if (!hasProfile()) {
-        state.screen = 'onboarding';
-        render();
+        promptForName();
         return;
       }
       startGame((card as HTMLElement).dataset.mode as GameMode);
@@ -2452,6 +2695,10 @@ function bindHomeEvents(): void {
   });
 
   app.querySelector('[data-action="player-info"]')?.addEventListener('click', () => {
+    if (!hasProfile()) {
+      promptForName();
+      return;
+    }
     const profile = getProfile();
     if (profile) state.avatarConfig = normalizeAvatarConfig(profile.avatarConfig);
     navigateFromHome('player-info');
@@ -2606,6 +2853,7 @@ function bindGameOverEvents(): void {
   app.querySelector('[data-action="scoreboard"]')?.addEventListener('click', () => {
     state.screen = 'scoreboard';
     render();
+    refreshScoreboardCloud();
   });
   app.querySelector('[data-action="home"]')?.addEventListener('click', goHome);
 }
@@ -3051,7 +3299,7 @@ function goHome(): void {
   }
   clearSocialOnlineTimer();
   state = {
-    screen: hasProfile() ? 'home' : 'onboarding',
+    screen: 'home',
     playType: state.playType,
     mode: null,
     round: null,
@@ -3087,6 +3335,11 @@ function goHome(): void {
     matchChatOpen: false,
     matchChatDraft: '',
     matchChatUnread: 0,
+    adminOpen: false,
+    adminQuery: '',
+    adminResults: [],
+    adminSelectedUid: null,
+    adminStatus: null,
   };
   scoreSavedForSession = false;
   gameStatsRecorded = false;
@@ -3166,15 +3419,26 @@ function initGuessMap(): void {
   });
 }
 
+function resolvePlayerAvatar(playerId: string): AvatarConfig {
+  const profile = getProfile();
+  if (profile && profile.playerId === playerId) return profile.avatarConfig;
+  const friend = getFriendById(playerId);
+  if (friend?.avatarConfig) return friend.avatarConfig;
+  return getDefaultAvatarConfig();
+}
+
 function placeGuessMarker(lng: number, lat: number): void {
   if (!map) return;
   guessMarker?.remove();
-  const el = document.createElement('div');
-  el.className = 'map-pin map-pin-guess';
-  el.setAttribute('aria-label', 'Your guess');
+  const el = createMapPinMarker({
+    avatarConfig: getProfile()?.avatarConfig,
+    pinVariant: 'guess',
+    behavior: 'orbit-walk',
+  });
   guessMarker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
     .setLngLat([lng, lat])
     .addTo(map);
+  mountMapPinMarker(el);
 }
 
 function initResultMap(): void {
@@ -3222,16 +3486,21 @@ function initResultMap(): void {
       },
     });
 
-    const guessEl = document.createElement('div');
-    guessEl.className = 'map-pin map-pin-guess';
-    guessEl.textContent = 'You';
+    const guessEl = createMapPinMarker({
+      avatarConfig: getProfile()?.avatarConfig,
+      pinVariant: 'guess',
+      behavior: 'sit',
+      label: 'You',
+    });
     guessMarker = new maplibregl.Marker({ element: guessEl, anchor: 'bottom' })
       .setLngLat([guess.lng, guess.lat])
       .addTo(map);
+    mountMapPinMarker(guessEl);
 
-    const answerEl = document.createElement('div');
-    answerEl.className = 'map-pin map-pin-answer';
-    answerEl.textContent = '✓';
+    const answerEl = createMapPinMarker({
+      pinVariant: 'answer',
+      label: '✓',
+    });
     answerMarker = new maplibregl.Marker({ element: answerEl, anchor: 'bottom' })
       .setLngLat([round.answer.lng, round.answer.lat])
       .addTo(map);
@@ -3241,13 +3510,29 @@ function initResultMap(): void {
 function initCoopRevealMap(): void {
   const room = state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
   if (!room?.hostPin || !room.guestPin) return;
-  initCoopDualPinMap('coop-reveal-map', room.hostPin, room.guestPin, room.hostName, room.guestName);
+  initCoopDualPinMap(
+    'coop-reveal-map',
+    room.hostPin,
+    room.guestPin,
+    room.hostName,
+    room.guestName,
+    room.hostPlayerId,
+    room.guestFriendId,
+  );
 }
 
 function initCoopVoteMap(): void {
   const room = state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
   if (!room?.hostPin || !room.guestPin) return;
-  initCoopDualPinMap('coop-vote-map', room.hostPin, room.guestPin, room.hostName, room.guestName);
+  initCoopDualPinMap(
+    'coop-vote-map',
+    room.hostPin,
+    room.guestPin,
+    room.hostName,
+    room.guestName,
+    room.hostPlayerId,
+    room.guestFriendId,
+  );
 }
 
 function initCoopResultMap(): void {
@@ -3267,8 +3552,16 @@ function initCoopResultMap(): void {
   });
   map.on('load', () => {
     if (!map || !room.finalPin) return;
-    addCoopMapPin(map, room.finalPin.lng, room.finalPin.lat, 'Team', 'map-pin-guess');
-    addCoopMapPin(map, round.answer.lng, round.answer.lat, '✓', 'map-pin-answer');
+    addCoopMapPin(map, room.finalPin.lng, room.finalPin.lat, {
+      pinVariant: 'team',
+      avatarConfig: getProfile()?.avatarConfig,
+      behavior: 'sit',
+      label: 'Team',
+    });
+    addCoopMapPin(map, round.answer.lng, round.answer.lat, {
+      pinVariant: 'answer',
+      label: '✓',
+    });
   });
 }
 
@@ -3278,6 +3571,8 @@ function initCoopDualPinMap(
   guestPin: CoopPin,
   hostName: string,
   guestName: string,
+  hostPlayerId: string,
+  guestPlayerId: string,
 ): void {
   destroyMap();
   const bounds = new maplibregl.LngLatBounds();
@@ -3292,8 +3587,18 @@ function initCoopDualPinMap(
   });
   map.on('load', () => {
     if (!map) return;
-    addCoopMapPin(map, hostPin.lng, hostPin.lat, hostName.slice(0, 1), 'map-pin-host');
-    addCoopMapPin(map, guestPin.lng, guestPin.lat, guestName.slice(0, 1), 'map-pin-guest');
+    addCoopMapPin(map, hostPin.lng, hostPin.lat, {
+      pinVariant: 'host',
+      avatarConfig: resolvePlayerAvatar(hostPlayerId),
+      behavior: 'orbit-walk',
+      label: hostName.slice(0, 8),
+    });
+    addCoopMapPin(map, guestPin.lng, guestPin.lat, {
+      pinVariant: 'guest',
+      avatarConfig: resolvePlayerAvatar(guestPlayerId),
+      behavior: 'idle-near',
+      label: guestName.slice(0, 8),
+    });
   });
 }
 
@@ -3301,13 +3606,11 @@ function addCoopMapPin(
   targetMap: maplibregl.Map,
   lng: number,
   lat: number,
-  label: string,
-  className: string,
+  options: Parameters<typeof createMapPinMarker>[0],
 ): void {
-  const el = document.createElement('div');
-  el.className = `map-pin ${className}`;
-  el.textContent = label;
+  const el = createMapPinMarker(options);
   new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([lng, lat]).addTo(targetMap);
+  mountMapPinMarker(el);
 }
 
 function destroyPanorama(): void {
@@ -3384,6 +3687,7 @@ async function bootstrap(): Promise<void> {
           state.avatarConfig = normalizeAvatarConfig(merged.avatarConfig);
         });
         await syncSocialFromCloud();
+        await syncScoreboardFromCloud();
         startCloudCoopInviteListener(() => {
           if (state.screen === 'home') render();
           else if (state.socialOpen) patchHomeOverlays();

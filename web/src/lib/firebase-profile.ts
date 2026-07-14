@@ -1,5 +1,7 @@
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import type { InventoryItemId } from '../data/inventory';
 import type { PlayerProfile } from './profile';
+import { addBonusHeartsNextRun, addStashItemCharge } from './stash';
 import { getFirebaseDb, isFirebaseConfigured } from './firebase';
 import { waitForFirebaseUid } from './firebase-auth';
 
@@ -77,4 +79,26 @@ export async function syncLocalProfileWithFirebase(
   }
 
   return uid;
+}
+
+/** Apply admin-granted stash / hearts from Firestore to this device. */
+export async function applyCloudPlayerBonuses(uid: string): Promise<void> {
+  if (!isFirebaseConfigured()) return;
+  const ref = doc(getFirebaseDb(), 'users', uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  const bonusStash = data.bonusStash as Partial<Record<InventoryItemId, number>> | undefined;
+  if (bonusStash && typeof bonusStash === 'object') {
+    for (const [itemId, count] of Object.entries(bonusStash)) {
+      const n = Number(count);
+      if (n > 0) addStashItemCharge(itemId as InventoryItemId, n);
+    }
+    await updateDoc(ref, { bonusStash: {} });
+  }
+  const hearts = Number(data.bonusHeartsNextRun ?? 0);
+  if (hearts > 0) {
+    addBonusHeartsNextRun(hearts);
+    await updateDoc(ref, { bonusHeartsNextRun: 0 });
+  }
 }

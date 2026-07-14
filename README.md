@@ -25,12 +25,14 @@ Guess **where** you are. In time modes, also guess **when**.
 - Pixel-Avatar-Editor (LPC), ChronoPin-Logo, Credits-Overlay
 
 **Login & Account**
-- **Login-Maske** beim Start — Name eingeben (neu = neuer Spieler, bekannt = Welcome back)
-- Firebase **`loginNames`** für eindeutige Namen · **Factory Reset** in Player Info (Test)
+- **Login-Maske** beim Start — Name eingeben (neu = neuer Spieler, bekannt = Welcome back / Reclaim auf neuem Gerät)
+- Firebase **`loginNames`** für eindeutige Namen · **12s Timeout** + Offline-Fallback bei hängendem Login
+- **Admin-Panel** (⚙) für Spieler **Admin**, **Dary**, **Daryoush**: Spieler löschen, Stash-Items & Bonus-Herzen vergeben
+- **Factory Reset** in Player Info (Test)
 
 **Social & Friends (Firebase + Offline)**
-- Freunde **suchen, anfragen, annehmen** (Firestore + Demo-User offline)
-- Freundesliste, Chat (lokal), Online-Status
+- Freunde **suchen, anfragen, annehmen** (Firestore + Demo-User offline) — **ohne Duplikate**, eigener Name ausgeschlossen
+- Freundesliste, Chat (lokal), Online-Status · Suche behält Fokus beim Tippen
 - Multiplayer: **Gegner aus Freundesliste wählen**
 
 **Multiplayer — Co-op Decide (2 Spieler, Firebase)**
@@ -39,22 +41,24 @@ Guess **where** you are. In time modes, also guess **when**.
 - **Firestore-Sync** (`coopRooms`, `coopInvites`) · Host-Banner **Start game** auf Home
 - **Match-Chat** während der Runde (Pop-up-Toasts + Chat-Panel, Firestore messages)
 - Verlassen beendet Match nicht für Partner
+- **Global Scoreboard** (Firestore sync, ein Eintrag pro Spieler/Modus)
+- **Animierte Avatare** an Map-Pins (Co-op & Solo)
 
 **Deploy**
-- **Strato**-Build (`npm run build:strato`, Base `/app/Chrono/`) — [`docs/STRATO_DEPLOY.md`](./docs/STRATO_DEPLOY.md)
+- **Strato**-Build (`npm run build:strato`, Base `/Chrono/`) — Live: **https://media-acht.de/Chrono/** — [`docs/STRATO_DEPLOY.md`](./docs/STRATO_DEPLOY.md)
 - Firebase Hosting + Firestore Rules/Indexes im Repo
 
 ### Bekannte Lücken (nach v1)
 
 - 1v1 Duel & Battle Royale — UI only („Coming soon“)
 - Social-DMs nur lokal (kein Firestore-Chat zwischen Freunden)
-- Scoreboard nur lokal · Keine Loading-Spinner für Pano/Map
+- Keine Loading-Spinner für Pano/Map
 - MapLibre-Bundle groß (~1,6 MB JS) — lazy load später
 
 ### Kürzlich behoben (Polish-Pass)
 
-- Login-Name-Hijack verhindert · `loginNames` beim Profil-Sync
-- Freundesliste + Friend-Add über Firebase-Suche
+- Login hängt nicht mehr · Freundes-Suche ohne Fokus-Verlust · Admin-Panel
+- Name-Reclaim auf neuem Gerät · Scoreboard Cloud-Sync
 - Co-op Quit killt Partner-Match nicht mehr · Host Start-Banner
 - Demo-/Prototype-Texte aus UI entfernt · Daily nutzt 3 Herzen
 - Firestore composite indexes (`firestore.indexes.json`)

@@ -6,10 +6,10 @@ Zielordner auf dem Server:
 /STRATO-apps/wordpress_02/app/Chrono/
 ```
 
-Öffentliche URL (Beispiel):
+Öffentliche URL:
 
 ```
-https://deine-domain.de/app/Chrono/
+https://media-acht.de/Chrono/
 ```
 
 ## 1. Build
@@ -22,7 +22,7 @@ cp .env.example .env
 npm run build:strato
 ```
 
-Das erzeugt `web/dist/` mit Base-Pfad `/app/Chrono/` (`.env.production`).
+Das erzeugt `web/dist/` mit Base-Pfad `/Chrono/` (`.env.production`).
 
 ## 2. Upload
 
@@ -38,6 +38,15 @@ app/Chrono/
   ChronoPinLogo.png
 ```
 
+Automatisch per SFTP (nur Ordner `Chrono`):
+
+```bash
+export STRATO_FTP_HOST="your-host.ssh.w1.strato.hosting"
+export STRATO_FTP_USER="your-user"
+export STRATO_FTP_PASS="your-password"
+cd web && ./scripts/deploy-strato.sh
+```
+
 ## 3. Firebase (einmalig)
 
 1. **Authentication** → **Anonymous** aktivieren  
@@ -49,7 +58,9 @@ npx -y firebase-tools@latest login
 npx -y firebase-tools@latest deploy --only firestore
 ```
 
-4. **Authorized domains** (Authentication → Settings): deine Domain **ohne** `https://` und **ohne** Pfad
+4. **Authorized domains** (Authentication → Settings): `media-acht.de` (ohne Pfad)
+
+Admin-Aktionen (Spieler löschen, Items vergeben) erfordern die aktuellen `firestore.rules` mit `isAdminUser()` für Namen **admin**, **dary**, **daryoush**.
 
 ## 4. Mit Freundin spielen (Co-op)
 
@@ -64,11 +75,15 @@ npx -y firebase-tools@latest deploy --only firestore
 
 Sync über Firestore (`coopRooms`, `coopInvites`, `coopRooms/{id}/messages`).
 
-## 5. Factory Reset (Test)
+## 5. Admin-Panel
+
+Als Spieler **Admin**, **Dary** oder **Daryoush** eingeloggt: ⚙ auf dem Home-Screen → Spieler suchen, Items/Herzen vergeben oder Account löschen.
+
+## 6. Factory Reset (Test)
 
 Player info → ganz unten **Factory Reset** — löscht lokale Daten und zeigt die Login-Maske wieder.
 
-## 6. Anderer Unterordner?
+## 7. Anderer Unterordner?
 
 In `web/.env.production`:
 

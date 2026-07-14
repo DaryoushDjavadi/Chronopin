@@ -20,6 +20,7 @@ export interface FirestoreFriendRequest {
   id: string;
   fromUid: string;
   toUid: string;
+  toSearchName: string;
   fromName: string;
   toName: string;
   avatarConfig: AvatarConfig;
@@ -38,13 +39,26 @@ function friendshipId(a: string, b: string): string {
   return [a, b].sort().join('_');
 }
 
+export async function resolveFirestoreUserUid(uid: string): Promise<string> {
+  if (!isFirebaseConfigured()) return uid;
+  const snap = await getDoc(doc(getFirebaseDb(), 'users', uid));
+  if (!snap.exists()) return uid;
+  const migratedTo = snap.data()?.migratedTo;
+  if (typeof migratedTo === 'string' && migratedTo && migratedTo !== uid) {
+    return resolveFirestoreUserUid(migratedTo);
+  }
+  return uid;
+}
+
 export async function searchFirestoreUsersByName(
   term: string,
   excludeUid: string,
+  excludeSearchName?: string,
 ): Promise<{ uid: string; name: string; avatarConfig: AvatarConfig }[]> {
   if (!isFirebaseConfigured()) return [];
   const q = term.trim().toLowerCase();
   if (q.length < 2) return [];
+  const excludeName = excludeSearchName?.trim().toLowerCase() ?? '';
 
   const snap = await getDocs(
     query(
@@ -55,16 +69,28 @@ export async function searchFirestoreUsersByName(
     ),
   );
 
-  return snap.docs
+  const mapped = snap.docs
     .filter((d) => d.id !== excludeUid)
+    .filter((d) => !d.data().migratedTo)
     .map((d) => {
       const data = d.data();
       return {
         uid: d.id,
         name: String(data.name ?? 'Player'),
+        searchName: String(data.searchName ?? '').toLowerCase(),
         avatarConfig: normalizeAvatarConfig(data.avatarConfig as Partial<AvatarConfig>),
       };
-    });
+    })
+    .filter((u) => !excludeName || u.searchName !== excludeName);
+
+  const byName = new Map<string, { uid: string; name: string; avatarConfig: AvatarConfig }>();
+  for (const u of mapped) {
+    const key = u.searchName || u.name.trim().toLowerCase();
+    if (!byName.has(key)) {
+      byName.set(key, { uid: u.uid, name: u.name, avatarConfig: u.avatarConfig });
+    }
+  }
+  return [...byName.values()];
 }
 
 export async function sendFirestoreFriendRequest(
@@ -75,12 +101,16 @@ export async function sendFirestoreFriendRequest(
 ): Promise<string | null> {
   const fromUid = await waitForFirebaseUid();
   if (!fromUid || !isFirebaseConfigured()) return null;
+  if (toUid === fromUid || toName.trim().toLowerCase() === fromName.trim().toLowerCase()) {
+    return null;
+  }
 
   const id = `fr-${Date.now()}`;
   const req: FirestoreFriendRequest = {
     id,
     fromUid,
     toUid,
+    toSearchName: toName.trim().toLowerCase(),
     fromName,
     toName,
     avatarConfig,
@@ -98,19 +128,43 @@ export async function sendFirestoreFriendRequest(
 
 export async function getIncomingFirestoreRequests(
   uid: string,
+  searchName: string,
 ): Promise<FirestoreFriendRequest[]> {
   if (!isFirebaseConfigured()) return [];
-  const snap = await getDocs(
-    query(
-      collection(getFirebaseDb(), 'friendRequests'),
-      where('toUid', '==', uid),
-      where('status', '==', 'pending'),
+  const db = getFirebaseDb();
+  const [byUid, byName] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, 'friendRequests'),
+        where('toUid', '==', uid),
+        where('status', '==', 'pending'),
+      ),
     ),
-  );
-  return snap.docs.map((d) => ({ ...(d.data() as FirestoreFriendRequest), id: d.id }));
+    searchName
+      ? getDocs(
+          query(
+            collection(db, 'friendRequests'),
+            where('toSearchName', '==', searchName),
+            where('status', '==', 'pending'),
+          ),
+        )
+      : Promise.resolve(null),
+  ]);
+
+  const merged = new Map<string, FirestoreFriendRequest>();
+  byUid.docs.forEach((d) => {
+    merged.set(d.id, { ...(d.data() as FirestoreFriendRequest), id: d.id });
+  });
+  byName?.docs.forEach((d) => {
+    merged.set(d.id, { ...(d.data() as FirestoreFriendRequest), id: d.id });
+  });
+  return [...merged.values()];
 }
 
-export async function acceptFirestoreFriendRequest(requestId: string): Promise<void> {
+export async function acceptFirestoreFriendRequest(
+  requestId: string,
+  mySearchName?: string,
+): Promise<void> {
   const uid = await waitForFirebaseUid();
   if (!uid || !isFirebaseConfigured()) return;
 
@@ -118,15 +172,18 @@ export async function acceptFirestoreFriendRequest(requestId: string): Promise<v
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
   const req = snap.data() as FirestoreFriendRequest;
-  if (req.toUid !== uid || req.status !== 'pending') return;
+  const nameKey = mySearchName?.trim().toLowerCase() ?? '';
+  const isRecipient =
+    req.toUid === uid || (nameKey.length > 0 && req.toSearchName === nameKey);
+  if (!isRecipient || req.status !== 'pending') return;
 
   await updateDoc(ref, { status: 'accepted', updatedAt: serverTimestamp() });
 
-  const fsId = friendshipId(req.fromUid, req.toUid);
+  const fsId = friendshipId(req.fromUid, uid);
   await setDoc(doc(getFirebaseDb(), 'friendships', fsId), {
     id: fsId,
     userA: req.fromUid,
-    userB: req.toUid,
+    userB: uid,
     createdAt: Date.now(),
   } satisfies FirestoreFriendship);
 }
@@ -140,11 +197,12 @@ export async function declineFirestoreFriendRequest(requestId: string): Promise<
 }
 
 async function fetchUserProfile(uid: string): Promise<FriendProfile | null> {
-  const snap = await getDoc(doc(getFirebaseDb(), 'users', uid));
+  const resolvedUid = await resolveFirestoreUserUid(uid);
+  const snap = await getDoc(doc(getFirebaseDb(), 'users', resolvedUid));
   if (!snap.exists()) return null;
   const data = snap.data();
   return {
-    id: uid,
+    id: resolvedUid,
     name: String(data.name ?? 'Player'),
     tagline: 'ChronoPin player',
     avatarConfig: normalizeAvatarConfig(data.avatarConfig as Partial<AvatarConfig>),

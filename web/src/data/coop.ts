@@ -61,6 +61,8 @@ export interface CoopInvite {
   toFriendId: string;
   /** Firebase uid of invite recipient */
   toUid: string;
+  /** Lowercase name — survives device / uid changes */
+  toSearchName?: string;
   syncMode: CoopSyncMode;
   gameMode: GameMode;
   status: 'pending' | 'accepted' | 'declined';
@@ -199,6 +201,7 @@ export function createCoopInvite(
     fromName: hostName,
     toFriendId: guestFriendId,
     toUid: guestFriendId,
+    toSearchName: guestName.trim().toLowerCase(),
     syncMode,
     gameMode,
     status: 'pending',

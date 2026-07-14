@@ -57,17 +57,19 @@ function renderFriendsTab(): string {
 }
 
 function renderSearchResults(query: string, cloudResults: { uid: string; name: string; avatarConfig: AvatarConfig }[]): string {
-  const results = searchUsers(query);
   const q = query.trim();
   if (q.length < 2) {
     return `<p class="social-search-hint">Type at least 2 characters to search players.</p>`;
   }
 
-  const cloudRows =
-    cloudResults.length > 0
-      ? cloudResults
-          .map(
-            (u) => `
+  const cloudNames = new Set(cloudResults.map((u) => u.name.trim().toLowerCase()));
+  const demoResults = searchUsers(query).filter(
+    (u) => !cloudNames.has(u.name.trim().toLowerCase()),
+  );
+
+  const cloudRows = cloudResults
+    .map(
+      (u) => `
         <div class="social-search-row">
           <span class="social-search-avatar">${renderAvatar(u.avatarConfig, 'avatar avatar-sm')}</span>
           <span class="social-search-meta">
@@ -76,15 +78,12 @@ function renderSearchResults(query: string, cloudResults: { uid: string; name: s
           </span>
           <button type="button" class="btn btn-primary btn-sm" data-action="send-request-to" data-source="cloud" data-user="${u.uid}" data-name="${escapeHtml(u.name)}">Add</button>
         </div>`,
-          )
-          .join('')
-      : '';
+    )
+    .join('');
 
-  const demoRows =
-    results.length > 0
-      ? results
-          .map(
-            (u) => `
+  const demoRows = demoResults
+    .map(
+      (u) => `
         <div class="social-search-row">
           <span class="social-search-avatar">${renderAvatar(u.avatarConfig, 'avatar avatar-sm')}</span>
           <span class="social-search-meta">
@@ -93,9 +92,8 @@ function renderSearchResults(query: string, cloudResults: { uid: string; name: s
           </span>
           <button type="button" class="btn btn-primary btn-sm" data-action="send-request-to" data-source="demo" data-user="${u.id}">Add</button>
         </div>`,
-          )
-          .join('')
-      : '';
+    )
+    .join('');
 
   if (!cloudRows && !demoRows) {
     return `<p class="social-empty-inline">No players found for “${escapeHtml(q)}”. Both need a profile saved first.</p>`;
@@ -107,6 +105,13 @@ function renderSearchResults(query: string, cloudResults: { uid: string; name: s
       ${cloudRows}
       ${demoRows}
     </div>`;
+}
+
+export function renderSocialSearchResultsHtml(
+  query: string,
+  cloudResults: { uid: string; name: string; avatarConfig: AvatarConfig }[],
+): string {
+  return renderSearchResults(query, cloudResults);
 }
 
 function renderAddTab(addNameDraft: string, cloudResults: { uid: string; name: string; avatarConfig: AvatarConfig }[]): string {
@@ -129,7 +134,9 @@ function renderAddTab(addNameDraft: string, cloudResults: { uid: string; name: s
         />
         <button type="button" class="btn btn-primary social-add-btn" data-action="send-friend-request">Add</button>
       </div>
-      ${renderSearchResults(addNameDraft, cloudResults)}
+      <div data-social-search-slot>
+        ${renderSearchResults(addNameDraft, cloudResults)}
+      </div>
       <p class="social-add-hint">Search players by name to send a friend request.</p>
     </div>
 

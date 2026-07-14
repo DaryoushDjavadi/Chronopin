@@ -13,6 +13,7 @@ import {
   getIncomingFirestoreRequests,
   type FirestoreFriendRequest,
 } from './firebase-friends';
+import { getProfile } from './profile';
 import type { Unsubscribe } from 'firebase/firestore';
 
 let coopInviteUnsub: Unsubscribe | null = null;
@@ -33,10 +34,11 @@ export async function syncSocialFromCloud(): Promise<void> {
   if (!isFirebaseConfigured()) return;
   const uid = await waitForFirebaseUid();
   if (!uid) return;
+  const searchName = getProfile()?.name.trim().toLowerCase() ?? '';
 
   const [friends, incoming] = await Promise.all([
     getFirestoreFriends(uid),
-    getIncomingFirestoreRequests(uid),
+    getIncomingFirestoreRequests(uid, searchName),
   ]);
 
   friends.forEach((f) => registerCloudFriend(f));
@@ -48,8 +50,9 @@ export function startCloudCoopInviteListener(onChange?: () => void): void {
   if (!isFirebaseConfigured()) return;
   void waitForFirebaseUid().then((uid) => {
     if (!uid) return;
+    const searchName = getProfile()?.name.trim().toLowerCase() ?? '';
     coopInviteUnsub?.();
-    coopInviteUnsub = subscribeIncomingCoopInvites(uid, (invites) => {
+    coopInviteUnsub = subscribeIncomingCoopInvites(uid, searchName, (invites) => {
       setCloudIncomingCoopInvites(invites);
       onChange?.();
     });

@@ -143,6 +143,12 @@ export interface AppState {
   matchChatOpen: boolean;
   matchChatDraft: string;
   matchChatUnread: number;
+  /** Admin panel (Admin / Dary / Daryoush only) */
+  adminOpen: boolean;
+  adminQuery: string;
+  adminResults: import('./lib/firebase-admin').AdminPlayerRow[];
+  adminSelectedUid: string | null;
+  adminStatus: string | null;
 }
 
 export interface ScoreResult {

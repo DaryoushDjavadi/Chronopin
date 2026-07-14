@@ -23,6 +23,7 @@ const SIZE_MAP: Record<string, number> = {
   'avatar-sm': 32,
   'avatar-lg': 40,
   'avatar-game': 36,
+  'avatar-map': 44,
   'avatar-opt-thumb': 40,
   'avatar-acc-thumb': 28,
   'avatar-xl': 96,

@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "import:panos": "node scripts/import-external-panos.mjs",
-    "build:strato": "vite build --mode production"
+    "build:strato": "tsc && vite build --mode production"
   },
   "dependencies": {
     "firebase": "^12.16.0",

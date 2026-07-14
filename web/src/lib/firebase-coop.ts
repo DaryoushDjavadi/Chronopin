@@ -27,7 +27,12 @@ export async function pushCoopRoomToFirestore(room: CoopRoom): Promise<void> {
 
 export async function pushCoopInviteToFirestore(invite: CoopInvite): Promise<void> {
   if (!isFirebaseConfigured()) return;
-  await setDoc(inviteRef(invite.id), { ...invite, syncedAt: Date.now() }, { merge: true });
+  const payload = {
+    ...invite,
+    toSearchName: invite.toSearchName ?? invite.toUid,
+    syncedAt: Date.now(),
+  };
+  await setDoc(inviteRef(invite.id), payload, { merge: true });
 }
 
 export async function pullCoopRoomFromFirestore(roomId: string): Promise<CoopRoom | null> {
@@ -66,21 +71,59 @@ export function subscribeCoopRoom(
 
 export function subscribeIncomingCoopInvites(
   uid: string,
+  searchName: string,
   onUpdate: (invites: CoopInvite[]) => void,
 ): Unsubscribe | null {
   if (!isFirebaseConfigured()) return null;
-  const q = query(
-    collection(getFirebaseDb(), 'coopInvites'),
-    where('toUid', '==', uid),
-    where('status', '==', 'pending'),
-  );
-  return onSnapshot(
-    q,
+  const db = getFirebaseDb();
+  const byUid = new Map<string, CoopInvite>();
+  const byName = new Map<string, CoopInvite>();
+
+  const emit = () => {
+    const merged = new Map([...byUid, ...byName]);
+    const invites = [...merged.values()];
+    invites.forEach((inv) => applyRemoteCoopInvite(inv));
+    onUpdate(invites);
+  };
+
+  const unsubUid = onSnapshot(
+    query(
+      collection(db, 'coopInvites'),
+      where('toUid', '==', uid),
+      where('status', '==', 'pending'),
+    ),
     (snap) => {
-      const invites = snap.docs.map((d) => ({ ...(d.data() as CoopInvite), id: d.id }));
-      invites.forEach((inv) => applyRemoteCoopInvite(inv));
-      onUpdate(invites);
+      byUid.clear();
+      snap.docs.forEach((d) => {
+        byUid.set(d.id, { ...(d.data() as CoopInvite), id: d.id });
+      });
+      emit();
     },
-    (err) => console.warn('[ChronoPin] coop invite listener:', err),
+    (err) => console.warn('[ChronoPin] coop invite listener (uid):', err),
   );
+
+  if (!searchName) {
+    return unsubUid;
+  }
+
+  const unsubName = onSnapshot(
+    query(
+      collection(db, 'coopInvites'),
+      where('toSearchName', '==', searchName),
+      where('status', '==', 'pending'),
+    ),
+    (snap) => {
+      byName.clear();
+      snap.docs.forEach((d) => {
+        byName.set(d.id, { ...(d.data() as CoopInvite), id: d.id });
+      });
+      emit();
+    },
+    (err) => console.warn('[ChronoPin] coop invite listener (name):', err),
+  );
+
+  return () => {
+    unsubUid();
+    unsubName();
+  };
 }
