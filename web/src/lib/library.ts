@@ -1,7 +1,7 @@
 import { PANORAMAS, panoramaUrl as staticPanoramaUrl } from '../data/panoramas';
 import { getMapillaryLivePanoramaAssets, getMapillaryLiveThumbUrl } from './mapillary-live-catalog';
 import { safeStorageSet } from './storage';
-import type { PanoramaAsset, PanoramaSource } from '../types';
+import type { PanoramaAsset, PanoramaSource, PastEra } from '../types';
 
 const TRASH_KEY = 'chronopin-trashed-panos';
 const LEGACY_HIDDEN_KEY = 'chronopin-hidden-panos';
@@ -78,6 +78,36 @@ export interface LibrarySourceGroup {
   items: PanoramaAsset[];
 }
 
+export interface LibraryPastEraGroup {
+  key: PastEra;
+  label: string;
+  items: PanoramaAsset[];
+}
+
+export interface LibraryPastGroup {
+  items: PanoramaAsset[];
+  eras: LibraryPastEraGroup[];
+}
+
+const PAST_ERA_ORDER: PastEra[] = [
+  'antiquity',
+  'medieval',
+  'early-modern',
+  'industrial',
+  'vintage-photo',
+];
+
+const PAST_ERA_LABELS: Record<PastEra, string> = {
+  antiquity: 'Antike',
+  medieval: 'Mittelalter',
+  'early-modern': 'Frühe Neuzeit',
+  industrial: 'Industriezeit',
+  'vintage-photo': 'Vintage-Fotos (10–20+ Jahre)',
+};
+
+const LIBRARY_PAST_KEY = 'chronopin-library-past-expanded';
+const LIBRARY_PAST_ERA_KEY = 'chronopin-library-past-eras';
+
 const LIBRARY_COUNTRIES_KEY = 'chronopin-library-countries';
 
 function readLibraryCountriesExpanded(): Partial<Record<string, boolean>> {
@@ -146,6 +176,99 @@ function groupItemsByCountry(items: PanoramaAsset[]): LibraryCountryGroup[] {
       label: country,
       items: countryItems.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })),
     }));
+}
+
+export function isPastPanorama(asset: PanoramaAsset): boolean {
+  return asset.modes.includes('past');
+}
+
+export function inferPastEra(asset: PanoramaAsset): PastEra {
+  if (asset.pastEra) return asset.pastEra;
+  const y = asset.year;
+  if (y == null) return 'medieval';
+  if (y < 0 || y < 500) return 'antiquity';
+  if (y < 1500) return 'medieval';
+  if (y < 1800) return 'early-modern';
+  if (y < 1990) return 'industrial';
+  return 'vintage-photo';
+}
+
+export function groupPastPanoramas(items: PanoramaAsset[]): LibraryPastGroup | null {
+  const pastItems = items.filter(isPastPanorama);
+  if (pastItems.length === 0) return null;
+
+  const buckets = new Map<PastEra, PanoramaAsset[]>();
+  for (const item of pastItems) {
+    const era = inferPastEra(item);
+    const list = buckets.get(era) ?? [];
+    list.push(item);
+    buckets.set(era, list);
+  }
+
+  const eras = PAST_ERA_ORDER.filter((key) => buckets.has(key)).map((key) => ({
+    key,
+    label: PAST_ERA_LABELS[key],
+    items: buckets.get(key)!.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })),
+  }));
+
+  return {
+    items: pastItems,
+    eras,
+  };
+}
+
+export function libraryPastGroupKey(): string {
+  return 'past';
+}
+
+function readLibraryPastExpanded(): boolean {
+  try {
+    return localStorage.getItem(LIBRARY_PAST_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function isLibraryPastGroupExpanded(): boolean {
+  return readLibraryPastExpanded();
+}
+
+export function toggleLibraryPastGroupExpanded(): boolean {
+  const next = !readLibraryPastExpanded();
+  safeStorageSet(LIBRARY_PAST_KEY, next ? '1' : '0');
+  return next;
+}
+
+function readLibraryPastEraExpanded(): Partial<Record<PastEra, boolean>> {
+  try {
+    const raw = localStorage.getItem(LIBRARY_PAST_ERA_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Partial<Record<PastEra, boolean>>;
+  } catch {
+    return {};
+  }
+}
+
+export function isLibraryPastEraExpanded(era: PastEra): boolean {
+  return readLibraryPastEraExpanded()[era] ?? false;
+}
+
+export function toggleLibraryPastEraExpanded(era: PastEra): boolean {
+  const map = readLibraryPastEraExpanded();
+  const next = !isLibraryPastEraExpanded(era);
+  map[era] = next;
+  safeStorageSet(LIBRARY_PAST_ERA_KEY, JSON.stringify(map));
+  return next;
+}
+
+export function pastEraLabel(era: PastEra): string {
+  return PAST_ERA_LABELS[era];
+}
+
+export function formatPastYear(year: number): string {
+  if (year < 0) return `${Math.abs(year)} v. Chr.`;
+  if (year < 1000) return `${year} n. Chr.`;
+  return String(year);
 }
 
 export function groupVisiblePanoramasBySource(items: PanoramaAsset[]): LibrarySourceGroup[] {

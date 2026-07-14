@@ -23,6 +23,8 @@ Playable browser prototype under [`web/`](../web/). Validates core loop, Firebas
 | `coopRooms/{roomId}` | Full `CoopRoom` document | Patch writes + `onSnapshot` |
 | `coopRooms/{roomId}/messages/{id}` | In-match chat | Realtime listener |
 | `coopInvites/{inviteId}` | Co-op game invites | Create/update + incoming listener |
+| `duelRooms/{roomId}` | Full `DuelRoom` document | Patch writes + `onSnapshot` |
+| `duelInvites/{inviteId}` | 1v1 duel invites | Create/update + incoming listener |
 | `scoreboard/{searchName_mode}` | Global best scores per player/mode | On run end |
 | `panoramaRatings/{panoId}` | Shared difficulty rating (1–3★) per library scene | On rate + library open + login |
 | `panoramaReports/{panoId}` | User-reported broken/black panoramas | On report + admin review + login sync |
@@ -89,6 +91,20 @@ home → pick friend → coop setup → invite
 
 Match chat available on all co-op screens (`lib/match-chat-ui.ts`).
 
+### 1v1 Duel (Firebase)
+
+```
+home → pick friend → duel setup → invite
+  → guest accept (home banner)
+  → host start (home banner)
+  → [round intro] → explore → guess (hidden pin) → duel-wait → duel-reveal → duel-result
+  → next round until a player has 0 hearts
+```
+
+Match chat available on all duel screens. **3 hearts** per player; closest guess wins the round.
+
+**Modules:** `data/duel.ts`, `lib/duel-ui.ts`, `lib/firebase-duel.ts`, `lib/home-ui.ts` (mode + MP cards)
+
 **Vote flow (v2):** Each player picks host pin / guest pin / midpoint as a **preference** (`setCoopVotePreference`). Both see the partner's pick live. When both agree, **Submit team guess** (`confirmCoopTeamVote`) locks the final pin. Preferences can be changed until submit.
 
 ---
@@ -124,12 +140,13 @@ Local-only meta — stored in `chronopin-progression` (`xp`, `lifetimeXp`). Not 
 | Screen | Notes |
 |---|---|
 | Onboarding / Login | Name entry only (`renderOnboarding`) |
-| Home | Solo/Multi tabs, daily, social, co-op banners, level badge on player chip |
-| Explore / Guess | Solo or co-op (`isCoopRun`); round intro overlay on explore; **report button** (⚠) top-right; **pano loading spinner** |
-| Result / Game over | XP gain banner |
+| Home | Solo/Multi tabs, polished mode cards, daily, social, co-op/duel banners, level badge on player chip |
+| Explore / Guess | Solo, co-op, or duel; round intro overlay on explore; report button (⚠); pano loading spinner |
+| Result / Game over | XP gain banner; Chrono Journal entry saved |
 | Co-op Wait / Reveal / Vote / Result | Multiplayer phases; live polling on wait/reveal/vote |
-| Library / Library View / Library Map | Trash excluded from map pins; **accordion by source** → **country** sub-groups; collapsible trash section |
-| Player Info | Stats, avatar edit, stash, **Level & XP**, **Factory Reset** |
+| Duel Wait / Reveal / Round result | 1v1 phases; hearts HUD; live polling |
+| Library / Library View / Library Map | Trash excluded from map pins; accordion by source → country; **Past: Vergangenheit** by era |
+| Player Info | Stats, avatar edit, stash, **Chrono Journal**, Level & XP, Factory Reset |
 
 **Overlays:** Social, Co-op setup, Credits, Classic region, Daily wheel, Inventory (solo), Match chat (co-op), Admin (⚙), Round intro, **Mapillary Live settings**.
 
@@ -137,7 +154,9 @@ Local-only meta — stored in `chronopin-progression` (`xp`, `lifetimeXp`). Not 
 
 ## Panorama library
 
-**Static catalog:** `data/panoramas.ts` — **83** equirectangular JPGs in `public/panoramas/` (Wikimedia, Panoramax, KartaView).
+**Static catalog:** `data/panoramas.ts` — **93** equirectangular JPGs in `public/panoramas/` (Wikimedia, Panoramax, KartaView). **21** scenes tagged for **Past** mode with `pastEra` (historical library group **Vergangenheit**).
+
+**Import historical Past:** `npm run import:historical` (`scripts/import-historical-panos.mjs`) — Wikimedia Commons batch lookup.
 
 **Mapillary Live (optional):** When `VITE_MAPILLARY_ACCESS_TOKEN` is set and library toggle is ON, **61** virtual entries are merged from `data/mapillary-live-spots.ts`. Each resolves a nearby 360° image via Mapillary Graph API; thumbnails cached in `localStorage`. Preview uses MapillaryJS, not Pannellum.
 
@@ -163,6 +182,7 @@ web/src/
 ├── types.ts
 ├── data/
 │   ├── coop.ts                # Rooms, phases, vote prefs, abandonCoopGame
+│   ├── duel.ts                # 1v1 rooms, hearts, round resolution
 │   ├── match-chat.ts, social.ts, user-directory.ts
 │   ├── avatar-credits.ts      # Attribution strings for credits overlay
 │   └── rounds.ts, lpc-catalog.ts
@@ -173,12 +193,14 @@ web/src/
 │   ├── credits-ui.ts          # Attributes / Credits overlay
 │   ├── admin.ts, admin-ui.ts, firebase-admin.ts
 │   ├── firebase.ts, firebase-auth.ts, firebase-profile.ts
-│   ├── firebase-friends.ts, firebase-coop.ts, firebase-social.ts
+│   ├── firebase-friends.ts, firebase-coop.ts, firebase-duel.ts, firebase-social.ts
 │   ├── firebase-match-chat.ts, firebase-scoreboard.ts, firebase-pano-ratings.ts
 │   ├── firebase-pano-reports.ts
+│   ├── chrono-journal.ts, chrono-journal-ui.ts
+│   ├── home-ui.ts             # Mode + multiplayer home cards
 │   ├── pano-reports.ts, pano-loading-ui.ts
 │   ├── mapillary-api.ts, mapillary-viewer.ts, mapillary-live-catalog.ts, mapillary-live-ui.ts
-│   ├── coop-ui.ts, match-chat-ui.ts, social-ui.ts
+│   ├── coop-ui.ts, duel-ui.ts, match-chat-ui.ts, social-ui.ts
 │   ├── avatar-compose.ts, avatar-editor-ui.ts
 │   ├── daily.ts, library.ts, profile.ts, scoreboard.ts, stats.ts, …
 │   └── dialog-ui.ts, asset-url.ts, storage.ts
@@ -186,6 +208,7 @@ web/public/.htaccess           # SPA rewrite (Strato, RewriteBase /Chrono/)
 web/scripts/
 ├── deploy-strato.sh
 ├── import-external-panos.mjs
+├── import-historical-panos.mjs
 └── coop-multiplayer-e2e.mjs   # Playwright 2-player smoke test
 ```
 
@@ -201,6 +224,8 @@ web/scripts/
 | `chronopin-social-messages` | Friend chat (local only) |
 | `chronopin-match-chat` | Match chat cache |
 | `chronopin-coop-rooms` / `coop-invites` / `coop-active` | Co-op state |
+| `chronopin-duel-rooms` / `duel-invites` / `duel-active` | Duel state |
+| `chronopin-journal` | Chrono Journal postcard entries |
 | `chronopin-trashed-panos` / `seen-panos` | Library |
 | `chronopin-library-groups` | Accordion expand state per source tag |
 | `chronopin-library-countries` | Accordion expand state per country within source |
@@ -256,7 +281,7 @@ Players named **Admin**, **Dary**, or **Daryoush** get ⚙ on Home → search cl
 
 | Area | Status |
 |---|---|
-| 1v1 Duel / Battle Royale | UI only |
+| Battle Royale | UI only |
 | Friend DMs | localStorage only (no Firestore friend chat) |
 | XP / level cloud sync | Local only |
 | Level perks | Placeholder text only — no gameplay effect yet |

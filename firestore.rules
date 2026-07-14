@@ -123,6 +123,26 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 1v1 duel rooms
+    match /duelRooms/{roomId} {
+      allow read: if isCoopParticipant(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.hostPlayerId == request.auth.uid
+        && request.resource.data.guestUid is string;
+      allow update: if isCoopParticipant(resource.data);
+      allow delete: if false;
+    }
+
+    // 1v1 duel invites
+    match /duelInvites/{inviteId} {
+      allow read: if isInviteParticipant(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.fromPlayerId == request.auth.uid
+        && request.resource.data.toUid is string;
+      allow update: if isInviteParticipant(resource.data);
+      allow delete: if false;
+    }
+
     // Chat (future)
     match /chats/{chatId}/messages/{messageId} {
       allow read, create: if signedIn()

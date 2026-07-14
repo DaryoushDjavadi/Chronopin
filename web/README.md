@@ -46,7 +46,7 @@ Without Firebase (no `.env`), everything runs offline in `localStorage`.
 
 ## Multiplayer — Co-op Decide ✅
 
-Home → **Multiplayer** → pick a friend → **Co-op Decide** (always available when a friend is selected — only 1v1 Duel / Battle Royale show “coming soon”)
+Home → **Multiplayer** → pick a friend → **Co-op Decide** or **1v1 Duel**
 
 | Mode | Behaviour |
 |---|---|
@@ -61,12 +61,18 @@ Home → **Multiplayer** → pick a friend → **Co-op Decide** (always availabl
 
 1. Both open the same URL and log in with different names
 2. 👥 **Friends** → search by name → send/accept request
-3. Multiplayer → choose friend → Co-op Decide → send invite
+3. Multiplayer → choose friend → Co-op Decide or **1v1 Duel** → send invite
 4. Guest: home banner **Accept & play**
 5. Host: home banner **Start game**
 6. 💬 **Match chat** during the game (pop-up toasts + chat panel)
 
-**1v1 Duel** and **Battle Royale** are UI previews only (coming soon).
+### Multiplayer — 1v1 Duel ✅
+
+**Flow:** invite → accept → blind pin → reveal both → round winner (closest guess) → repeat until 0 hearts.
+
+**3 hearts** per player. Live or Async. Classic / Past / Future.
+
+**Battle Royale** — UI preview only (coming soon).
 
 ### Multiplayer E2E test (Playwright)
 
@@ -109,7 +115,8 @@ Requires deployed Firestore rules with `isAdminUser()`.
 
 ## Panorama Library
 
-- **83 static scenes** (Wikimedia + Panoramax + KartaView) under `web/public/panoramas/`
+- **93 static scenes** (Wikimedia + Panoramax + KartaView + historical Past) under `web/public/panoramas/`
+- **Past library group** **Vergangenheit** — scenes grouped by era (Antiquity, Medieval, Industrial, Vintage photo, …)
 - **Collapsible groups** by source tag — tap **wikimedia**, **panoramax**, **mapillary**, or **kartaview** to expand/collapse
 - **Country sub-groups** under each source (e.g. Germany, France) — nested accordion; state in `chronopin-library-countries`
 - **Trash** — collapsible section at bottom; hidden from gameplay and world map (`chronopin-library-trash-expanded`)
@@ -140,6 +147,7 @@ Also: refresh all previews, open library, play random live round.
 npm run import:panos -- --source panoramax
 npm run import:panos -- --source panoramax --merge --only berlin,paris
 npm run import:panos -- --source mapillary --merge   # needs MAPILLARY_ACCESS_TOKEN
+npm run import:historical                            # Wikimedia historical Past JPGs
 npm run test:mapillary                               # smoke-test API token
 ```
 
@@ -168,6 +176,8 @@ npx -y firebase-tools@latest deploy --only firestore
 | `coopRooms/{roomId}` | Live co-op state |
 | `coopRooms/{roomId}/messages` | In-match chat |
 | `coopInvites/{id}` | Pending game invites |
+| `duelRooms/{roomId}` | Live 1v1 duel state |
+| `duelInvites/{id}` | Pending duel invites |
 | `scoreboard/{searchName_mode}` | Global best scores |
 | `panoramaRatings/{panoId}` | Shared difficulty rating (1–3★) per library scene |
 | `panoramaReports/{panoId}` | User-reported broken/black scenes — admin review queue |

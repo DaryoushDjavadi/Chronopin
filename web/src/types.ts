@@ -4,6 +4,14 @@ export type GameMode = 'classic' | 'past' | 'future';
 export type PlayType = 'solo' | 'multiplayer';
 export type PanoramaSource = 'wikimedia' | 'mapillary' | 'kartaview' | 'panoramax';
 
+/** Library / Past-mode subcategory for historical scenes */
+export type PastEra =
+  | 'antiquity'
+  | 'medieval'
+  | 'early-modern'
+  | 'industrial'
+  | 'vintage-photo';
+
 export type ClassicRegionFilter =
   | 'world'
   | 'europe'
@@ -27,7 +35,10 @@ export type Screen =
   | 'coop-wait'
   | 'coop-reveal'
   | 'coop-vote'
-  | 'coop-result';
+  | 'coop-result'
+  | 'duel-wait'
+  | 'duel-reveal'
+  | 'duel-result';
 
 export interface PanoConfig {
   haov?: number;
@@ -46,6 +57,8 @@ export interface PanoramaAsset {
   lng: number;
   year?: number;
   modes: GameMode[];
+  /** Past library subcategory (only when modes includes past) */
+  pastEra?: PastEra;
   panoConfig?: PanoConfig;
   context: string;
   attribution: string;
@@ -149,6 +162,13 @@ export interface AppState {
   coopSetupFriendId: string | null;
   coopSyncMode: 'live' | 'async';
   coopGameMode: GameMode;
+  /** 1v1 duel run */
+  isDuelRun: boolean;
+  duelRoomId: string | null;
+  duelMyRole: 'host' | 'guest' | null;
+  duelSetupOpen: boolean;
+  duelSyncMode: 'live' | 'async';
+  duelGameMode: GameMode;
   /** Firebase user search results (Add friend tab) */
   socialCloudSearch: { uid: string; name: string; avatarConfig: import('./data/lpc-catalog').AvatarConfig }[];
   /** In-match chat panel (co-op) */
@@ -188,6 +208,22 @@ export interface ScoreResult {
   maxPoints: number;
   lostHeart: boolean;
   failReason: string | null;
+}
+
+/** Postcard saved after a good solo/co-op round (localStorage). */
+export interface ChronoJournalEntry {
+  id: string;
+  panoId: string;
+  title: string;
+  region: string;
+  thumb: string;
+  score: number;
+  maxScore: number;
+  distanceKm: number;
+  mode: GameMode;
+  date: number;
+  context?: string;
+  coop?: boolean;
 }
 
 export const MAX_HEARTS = 3;

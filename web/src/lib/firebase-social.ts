@@ -4,10 +4,12 @@ import {
   setCloudFriendIds,
   setCloudIncomingRequests,
   setCloudIncomingCoopInvites,
+  setCloudIncomingDuelInvites,
 } from '../data/social';
 import { isFirebaseConfigured } from './firebase';
 import { waitForFirebaseUid } from './firebase-auth';
 import { subscribeIncomingCoopInvites } from './firebase-coop';
+import { subscribeIncomingDuelInvites } from './firebase-duel';
 import {
   getFirestoreFriends,
   getIncomingFirestoreRequests,
@@ -17,6 +19,7 @@ import { getProfile } from './profile';
 import type { Unsubscribe } from 'firebase/firestore';
 
 let coopInviteUnsub: Unsubscribe | null = null;
+let duelInviteUnsub: Unsubscribe | null = null;
 
 function mapFirestoreRequest(req: FirestoreFriendRequest): FriendRequest {
   return {
@@ -62,4 +65,22 @@ export function startCloudCoopInviteListener(onChange?: () => void): void {
 export function stopCloudCoopInviteListener(): void {
   coopInviteUnsub?.();
   coopInviteUnsub = null;
+}
+
+export function startCloudDuelInviteListener(onChange?: () => void): void {
+  if (!isFirebaseConfigured()) return;
+  void waitForFirebaseUid().then((uid) => {
+    if (!uid) return;
+    const searchName = getProfile()?.name.trim().toLowerCase() ?? '';
+    duelInviteUnsub?.();
+    duelInviteUnsub = subscribeIncomingDuelInvites(uid, searchName, (invites) => {
+      setCloudIncomingDuelInvites(invites);
+      onChange?.();
+    });
+  });
+}
+
+export function stopCloudDuelInviteListener(): void {
+  duelInviteUnsub?.();
+  duelInviteUnsub = null;
 }

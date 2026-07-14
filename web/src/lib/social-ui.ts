@@ -16,8 +16,10 @@ import {
   searchUsers,
 } from '../data/social';
 import { renderCoopInvitePanel, renderCoopGamesTab } from './coop-ui';
+import { renderDuelGamesTab } from './duel-ui';
 import { getCoopGamesAttentionCount } from '../data/coop';
-import { getCloudIncomingCoopInvites } from '../data/social';
+import { getDuelGamesAttentionCount } from '../data/duel';
+import { getCloudIncomingCoopInvites, getCloudIncomingDuelInvites } from '../data/social';
 
 export type SocialTab = 'friends' | 'games' | 'add';
 export type SocialView = 'list' | 'friend';
@@ -319,7 +321,10 @@ export function renderSocialOverlayHtml(options: {
     options;
   const pending = getPendingRequestCount();
   const gamesAttention =
-    getCoopGamesAttentionCount(myPlayerId) + getCloudIncomingCoopInvites().length;
+    getCoopGamesAttentionCount(myPlayerId) +
+    getDuelGamesAttentionCount(myPlayerId) +
+    getCloudIncomingCoopInvites().length +
+    getCloudIncomingDuelInvites().length;
 
   const body =
     view === 'friend' && selectedFriendId
@@ -340,7 +345,7 @@ export function renderSocialOverlayHtml(options: {
           tab === 'friends'
             ? renderFriendsTab()
             : tab === 'games'
-              ? renderCoopGamesTab(myPlayerId, getCloudIncomingCoopInvites())
+              ? `${renderCoopGamesTab(myPlayerId, getCloudIncomingCoopInvites())}${renderDuelGamesTab(myPlayerId, getCloudIncomingDuelInvites())}`
               : renderAddTab(addNameDraft, cloudSearchResults)
         }`;
 

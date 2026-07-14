@@ -1,7 +1,7 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import maplibregl from 'maplibre-gl';
 import './styles.css';
-import { pickRound, modeLabel, modeDescription } from './data/rounds';
+import { pickRound, modeLabel } from './data/rounds';
 import { renderAvatar } from './data/avatars';
 import {
   type AvatarCategory,
@@ -22,6 +22,8 @@ import {
 import type { InventoryItemId } from './data/inventory';
 import { getInventoryItem } from './data/inventory';
 import { bindInventoryDetailPreview, renderInventoryOverlayHtml } from './lib/inventory-ui';
+import { renderChronoJournalPanel } from './lib/chrono-journal-ui';
+import { tryAddJournalEntry } from './lib/chrono-journal';
 import {
   acceptFriendRequest,
   cancelOutgoingRequest,
@@ -65,6 +67,31 @@ import {
   type CoopVoteChoice,
 } from './data/coop';
 import {
+  acceptDuelInvite,
+  abandonDuelGame,
+  applyRemoteDuelRoom,
+  applyRemoteDuelInvite,
+  canISubmitDuelPin,
+  cancelDuelInvite,
+  createDuelInvite,
+  declineDuelInvite,
+  describeDuelSession,
+  finishDuelRoom,
+  getDuelRoom,
+  getDuelRound,
+  getMyActiveDuelRooms,
+  getMyDuelRole,
+  getResolvedDuelRoom,
+  leaveDuelRunLocally,
+  loadDuelInvitesLocal,
+  resolveDuelRound,
+  setActiveDuelRoomId,
+  simulatePartnerPinForDuel,
+  startDuelNextRound,
+  startDuelRoom,
+  submitDuelPin,
+} from './data/duel';
+import {
   renderCoopHud,
   renderCoopResult,
   renderCoopReveal,
@@ -73,9 +100,18 @@ import {
   renderCoopWaitScreen,
   renderMultiplayerFriendPicker,
 } from './lib/coop-ui';
+import {
+  renderDuelCard,
+  renderDuelHud,
+  renderDuelReveal,
+  renderDuelRoundResult,
+  renderDuelSetupOverlay,
+  renderDuelWaitScreen,
+} from './lib/duel-ui';
 import { renderCreditsOverlayHtml } from './lib/credits-ui';
 import { renderClassicRegionOverlayHtml } from './lib/classic-region-ui';
 import { renderDailyHomeCard, renderDailyWheelOverlay } from './lib/daily-ui';
+import { renderCoopDecideCard, renderModeCard, renderMpSoonCard } from './lib/home-ui';
 import {
   canPlayDaily,
   formatDailyCountdown,
@@ -143,8 +179,14 @@ import {
   panoramaUrl,
   renderPanoramaBadges,
   groupVisiblePanoramasBySource,
+  groupPastPanoramas,
   isLibraryGroupExpanded,
   toggleLibraryGroupExpanded,
+  isLibraryPastGroupExpanded,
+  toggleLibraryPastGroupExpanded,
+  isLibraryPastEraExpanded,
+  toggleLibraryPastEraExpanded,
+  formatPastYear,
   isLibraryCountryExpanded,
   toggleLibraryCountryExpanded,
   getPanoramaLocality,
@@ -196,10 +238,18 @@ import {
   startMyCoopRoomsListener,
   subscribeCoopRoom,
 } from './lib/firebase-coop';
+import {
+  pullDuelRoomFromFirestore,
+  pullDuelInviteFromFirestore,
+  pullMyDuelRoomsFromFirestore,
+  startMyDuelRoomsListener,
+  subscribeDuelRoom,
+} from './lib/firebase-duel';
 import { assetUrl } from './lib/asset-url';
 import {
   syncSocialFromCloud,
   startCloudCoopInviteListener,
+  startCloudDuelInviteListener,
   stopCloudCoopInviteListener,
 } from './lib/firebase-social';
 import { loginWithName } from './lib/login';
@@ -218,7 +268,7 @@ import {
   sendFirestoreFriendRequest,
   searchFirestoreUsersByName,
 } from './lib/firebase-friends';
-import { getCloudIncomingCoopInvites } from './data/social';
+import { getCloudIncomingCoopInvites, getCloudIncomingDuelInvites } from './data/social';
 import {
   addScoreboardEntry,
   getScoreboard,
@@ -297,6 +347,12 @@ let state: AppState = {
   coopSetupFriendId: null,
   coopSyncMode: 'live',
   coopGameMode: 'classic',
+  isDuelRun: false,
+  duelRoomId: null,
+  duelMyRole: null,
+  duelSetupOpen: false,
+  duelSyncMode: 'live',
+  duelGameMode: 'classic',
   socialCloudSearch: [],
   matchChatOpen: false,
   matchChatDraft: '',
@@ -329,15 +385,22 @@ let libraryMarkers: maplibregl.Marker[] = [];
 let libraryMapInitToken = 0;
 let matchChatUnsub: (() => void) | null = null;
 let activeCoopRoomUnsub: (() => void) | null = null;
+let activeDuelRoomUnsub: (() => void) | null = null;
 let coopLivePollTimer: ReturnType<typeof setInterval> | null = null;
+let duelLivePollTimer: ReturnType<typeof setInterval> | null = null;
 let namePromptBound = false;
 let socialSearchTimer: ReturnType<typeof setTimeout> | null = null;
 let adminSearchTimer: ReturnType<typeof setTimeout> | null = null;
 let coopXpAwardedRoom: string | null = null;
+let duelXpAwardedKey: string | null = null;
 let roundIntroTimer: ReturnType<typeof setTimeout> | null = null;
 let levelUpTimer: ReturnType<typeof setTimeout> | null = null;
 
 const app = document.getElementById('app')!;
+
+function isHiddenPinRun(): boolean {
+  return state.isCoopRun || state.isDuelRun;
+}
 
 function render(): void {
   destroyPanorama();
@@ -356,6 +419,8 @@ function render(): void {
   if (state.screen === 'coop-reveal') initCoopRevealMap();
   if (state.screen === 'coop-vote') initCoopVoteMap();
   if (state.screen === 'coop-result') initCoopResultMap();
+  if (state.screen === 'duel-reveal') initDuelRevealMap();
+  if (state.screen === 'duel-result') initDuelResultMap();
   if (state.screen === 'home') {
     syncSocialOnlineTimer();
     syncDailyCountdownTimer();
@@ -407,6 +472,12 @@ function getScreenHtml(screen: Screen): string {
       return renderCoopVoteScreen();
     case 'coop-result':
       return renderCoopResultScreen();
+    case 'duel-wait':
+      return renderDuelWait();
+    case 'duel-reveal':
+      return renderDuelRevealScreen();
+    case 'duel-result':
+      return renderDuelResultScreen();
     case 'onboarding':
       return renderHome();
   }
@@ -414,7 +485,6 @@ function getScreenHtml(screen: Screen): string {
 
 function renderHome(): string {
   const modes: GameMode[] = ['classic', 'past', 'future'];
-  const modeIcons = { classic: '📍', past: '⏳', future: '🚀' };
   const panoCount = getVisiblePanoramas().length;
   const profile = getProfile();
   const avatarConfig = profile?.avatarConfig ?? state.avatarConfig;
@@ -427,12 +497,25 @@ function renderHome(): string {
     const info = describeCoopSession(r, getPlayerId());
     return info.myRole === 'host' && info.needsAttention;
   });
+  const incomingDuel = getCloudIncomingDuelInvites();
+  const myActiveDuel = getMyActiveDuelRooms(getPlayerId());
+  const hostJoinDuel = myActiveDuel.filter((r) => {
+    const info = describeDuelSession(r, getPlayerId());
+    return info.myRole === 'host' && info.needsAttention;
+  });
   const mpFriends = getFriends();
+  const hasMpBanner =
+    incomingCoop.length > 0 ||
+    hostJoinCoop.length > 0 ||
+    myActiveCoop.length > 0 ||
+    incomingDuel.length > 0 ||
+    hostJoinDuel.length > 0 ||
+    myActiveDuel.length > 0;
 
   return `
     <div class="screen screen-home">
       ${
-        incomingCoop.length > 0 || hostJoinCoop.length > 0 || myActiveCoop.length > 0
+        hasMpBanner
           ? `<div class="home-coop-banner">
               ${incomingCoop
                 .map(
@@ -457,6 +540,39 @@ function renderHome(): string {
                 </div>`,
                 )
                 .join('')}
+              ${incomingDuel
+                .map(
+                  (inv) => `
+                <div class="home-coop-invite">
+                  <span><strong>${escapeHtml(inv.fromName)}</strong> challenged you to a 1v1 Duel · ${escapeHtml(inv.syncMode === 'live' ? 'Live' : 'Async')}</span>
+                  <div class="home-coop-invite-actions">
+                    <button type="button" class="btn btn-primary btn-sm" data-action="accept-duel-home" data-invite="${inv.id}">Accept &amp; duel</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="decline-duel-home" data-invite="${inv.id}">Decline</button>
+                  </div>
+                </div>`,
+                )
+                .join('')}
+              ${hostJoinDuel
+                .map(
+                  (room) => `
+                <div class="home-coop-invite home-coop-ready">
+                  <span><strong>${escapeHtml(room.guestName)}</strong> accepted your duel</span>
+                  <div class="home-coop-invite-actions">
+                    <button type="button" class="btn btn-primary btn-sm" data-action="enter-duel-room" data-room="${room.id}">Join duel</button>
+                  </div>
+                </div>`,
+                )
+                .join('')}
+              ${
+                myActiveDuel.length > 0
+                  ? `<div class="home-coop-invite">
+                      <span>${myActiveDuel.length} active duel${myActiveDuel.length === 1 ? '' : 's'}</span>
+                      <div class="home-coop-invite-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" data-action="open-duel-games">Open duels</button>
+                      </div>
+                    </div>`
+                  : ''
+              }
               ${
                 myActiveCoop.length > 0
                   ? `<div class="home-coop-invite">
@@ -494,7 +610,7 @@ function renderHome(): string {
           decoding="async"
         />
         <p class="tagline">Guess <strong>where</strong>. In time modes, also guess <strong>when</strong>.</p>
-        <span class="badge">${panoCount} panoramas · Solo &amp; Co-op</span>
+        <span class="badge">${panoCount} panoramas · Solo, Co-op &amp; 1v1</span>
       </header>
 
       <section class="panel">
@@ -507,17 +623,11 @@ function renderHome(): string {
           ${renderDailyHomeCard()}
 
           <h2>Choose mode</h2>
-          <p class="hint">3 hearts per run · bad guesses cost a heart</p>
+          <p class="hint">3 hearts per run — wrong guesses cost a heart</p>
           <div class="mode-grid">
             ${modes
-              .map(
-                (m) => `
-              <button class="mode-card" data-mode="${m}" data-action="${m === 'classic' ? 'select-classic' : 'start-mode'}">
-                <span class="mode-icon">${modeIcons[m]}</span>
-                <span class="mode-name">${modeLabel(m)}</span>
-                <span class="mode-desc">${modeDescription(m)}</span>
-              </button>
-            `,
+              .map((m) =>
+                renderModeCard(m, m === 'classic' ? 'select-classic' : 'start-mode'),
               )
               .join('')}
           </div>
@@ -563,12 +673,19 @@ function renderHome(): string {
 
         <div class="multi-panel${soloActive ? ' hidden' : ''}">
           <h2>Play together</h2>
-          <p class="hint">Pick a friend, then choose a multiplayer mode.</p>
+          <p class="hint">Pick a friend, then jump into a multiplayer mode.</p>
           ${renderMultiplayerFriendPicker(mpFriends, state.coopSetupFriendId)}
           <div class="mp-grid" data-mp-grid>
             ${renderCoopDecideCard(mpFriends, state.coopSetupFriendId)}
-            ${renderMpSoonCard('1v1 Duel', 'Same scene, closest guess wins the round', 'Best of 5 · Coming soon')}
-            ${renderMpSoonCard('Battle Royale', '4–8 players, elimination rounds', 'Coming soon')}
+            ${renderDuelCard(mpFriends, state.coopSetupFriendId)}
+            ${renderMpSoonCard(
+              'Battle Royale',
+              'Last explorer standing',
+              '4–8 players drop pins each round — furthest guess is eliminated.',
+              'Coming soon',
+              'soon',
+              '👑',
+            )}
           </div>
         </div>
       </section>
@@ -901,6 +1018,8 @@ function renderPlayerInfo(): string {
         ${renderXpBar(getProgression().xp)}
       </section>
 
+      ${renderChronoJournalPanel()}
+
       <section class="stats-panel">
         <h3>Statistics</h3>
         <div class="stats-grid">
@@ -1060,39 +1179,6 @@ function renderScoreboard(): string {
   `;
 }
 
-function renderCoopDecideCard(friends: import('./data/social').FriendProfile[], selectedFriendId: string | null): string {
-  const ready =
-    friends.length > 0 &&
-    selectedFriendId !== null &&
-    friends.some((f) => f.id === selectedFriendId);
-  const badgeLabel = friends.length === 0 ? 'Add friend' : ready ? 'Play' : 'Pick friend';
-  const badgeClass =
-    friends.length === 0 ? 'soon-badge' : ready ? 'mp-badge' : 'mp-badge mp-badge-muted';
-
-  return `
-    <button class="mp-card ${ready ? 'mp-highlight' : ''}" type="button" data-action="coop-decide">
-      <div class="mp-card-top">
-        <strong>Co-op Decide</strong>
-        <span class="${badgeClass}">${badgeLabel}</span>
-      </div>
-      <p>Blind pin → reveal → vote on one final pin</p>
-      <span class="mp-meta">2 players · Live or async · Firebase sync</span>
-    </button>`;
-}
-
-function renderMpSoonCard(title: string, desc: string, meta: string): string {
-  return `
-    <button class="mp-card" type="button" disabled>
-      <div class="mp-card-top">
-        <strong>${title}</strong>
-        <span class="soon-badge">Soon</span>
-      </div>
-      <p>${desc}</p>
-      <span class="mp-meta">${meta}</span>
-    </button>
-  `;
-}
-
 function renderSessionHud(): string {
   const s = state.session!;
   return `
@@ -1220,10 +1306,33 @@ function renderCoopSetup(): string {
   });
 }
 
+function renderDuelSetup(): string {
+  return renderDuelSetupOverlay({
+    open: state.duelSetupOpen,
+    friends: getFriends(),
+    selectedFriendId: state.coopSetupFriendId,
+    syncMode: state.duelSyncMode,
+    gameMode: state.duelGameMode,
+  });
+}
+
 function setCoopSetupOpen(open: boolean, friendId?: string | null): void {
   state.coopSetupOpen = open;
   if (friendId !== undefined) state.coopSetupFriendId = friendId;
   if (open) {
+    state.duelSetupOpen = false;
+    state.socialOpen = false;
+    state.creditsOpen = false;
+    state.classicSetupOpen = false;
+  }
+  if (state.screen === 'home') patchHomeOverlays();
+}
+
+function setDuelSetupOpen(open: boolean, friendId?: string | null): void {
+  state.duelSetupOpen = open;
+  if (friendId !== undefined) state.coopSetupFriendId = friendId;
+  if (open) {
+    state.coopSetupOpen = false;
     state.socialOpen = false;
     state.creditsOpen = false;
     state.classicSetupOpen = false;
@@ -1285,8 +1394,15 @@ function patchMultiplayerPanel(): void {
   if (grid) {
     grid.innerHTML = `
       ${renderCoopDecideCard(friends, selectedId)}
-      ${renderMpSoonCard('1v1 Duel', 'Same scene, closest guess wins the round', 'Best of 5 · Coming soon')}
-      ${renderMpSoonCard('Battle Royale', '4–8 players, elimination rounds', 'Coming soon')}
+      ${renderDuelCard(friends, selectedId)}
+      ${renderMpSoonCard(
+        'Battle Royale',
+        'Last explorer standing',
+        '4–8 players drop pins each round — furthest guess is eliminated.',
+        'Coming soon',
+        'soon',
+        '👑',
+      )}
     `;
   }
 }
@@ -1379,6 +1495,12 @@ function patchHomeOverlays(): void {
   const coopEl = screen.querySelector('[data-coop-overlay]');
   if (coopEl) coopEl.outerHTML = coopHtml;
   else screen.insertAdjacentHTML('beforeend', coopHtml);
+
+  const duelHtml = renderDuelSetup();
+  screen.querySelectorAll('[data-duel-overlay] ~ [data-duel-overlay]').forEach((el) => el.remove());
+  const duelEl = screen.querySelector('[data-duel-overlay]');
+  if (duelEl) duelEl.outerHTML = duelHtml;
+  else screen.insertAdjacentHTML('beforeend', duelHtml);
 
   const mapillaryHtml = renderMapillaryLiveOverlay();
   screen.querySelectorAll('[data-mapillary-overlay]').forEach((el) => el.remove());
@@ -1529,6 +1651,7 @@ async function handleReportPanorama(panoId: string): Promise<void> {
   const inActiveSoloRun =
     Boolean(state.session) &&
     !state.isCoopRun &&
+    !state.isDuelRun &&
     state.screen === 'explore' &&
     state.round?.panoramaId === panoId;
 
@@ -2081,6 +2204,99 @@ function bindSocialEventsOnce(): void {
       return;
     }
 
+    if (target.closest('[data-action="open-duel-setup"]')) {
+      setDuelSetupOpen(true, state.coopSetupFriendId);
+      return;
+    }
+
+    if (target.closest('[data-action="close-duel-setup"]')) {
+      setDuelSetupOpen(false);
+      return;
+    }
+
+    const pickDuelFriend = target.closest<HTMLElement>('[data-action="pick-duel-friend"]');
+    if (pickDuelFriend && state.duelSetupOpen) {
+      state.coopSetupFriendId = pickDuelFriend.dataset.friend ?? null;
+      patchHomeOverlays();
+      return;
+    }
+
+    const pickDuelSync = target.closest<HTMLElement>('[data-action="pick-duel-sync"]');
+    if (pickDuelSync && state.duelSetupOpen) {
+      state.duelSyncMode = (pickDuelSync.dataset.sync as 'live' | 'async') ?? 'live';
+      patchHomeOverlays();
+      return;
+    }
+
+    const pickDuelMode = target.closest<HTMLElement>('[data-action="pick-duel-mode"]');
+    if (pickDuelMode && state.duelSetupOpen) {
+      state.duelGameMode = (pickDuelMode.dataset.mode as GameMode) ?? 'classic';
+      patchHomeOverlays();
+      return;
+    }
+
+    if (target.closest('[data-action="send-duel-invite"]') && state.duelSetupOpen) {
+      sendDuelInviteFromSetup();
+      return;
+    }
+
+    const acceptDuelBtn = target.closest<HTMLElement>('[data-action="accept-duel-invite"]');
+    if (acceptDuelBtn && state.socialOpen) {
+      void acceptAndJoinDuelInvite(acceptDuelBtn.dataset.invite!);
+      return;
+    }
+
+    const acceptDuelHome = target.closest<HTMLElement>('[data-action="accept-duel-home"]');
+    if (acceptDuelHome) {
+      void acceptAndJoinDuelInvite(acceptDuelHome.dataset.invite!);
+      return;
+    }
+
+    const declineDuelHome = target.closest<HTMLElement>('[data-action="decline-duel-home"]');
+    if (declineDuelHome) {
+      declineDuelInvite(declineDuelHome.dataset.invite!);
+      void syncSocialFromCloud().then(() => render());
+      return;
+    }
+
+    const declineDuelBtn = target.closest<HTMLElement>('[data-action="decline-duel-invite"]');
+    if (declineDuelBtn && state.socialOpen) {
+      declineDuelInvite(declineDuelBtn.dataset.invite!);
+      showSocialToast('Duel invite declined.');
+      patchHomeOverlays();
+      return;
+    }
+
+    const cancelDuelBtn = target.closest<HTMLElement>('[data-action="cancel-duel-invite"]');
+    if (cancelDuelBtn && state.socialOpen) {
+      cancelDuelInvite(cancelDuelBtn.dataset.invite!);
+      showSocialToast('Duel invite cancelled.');
+      patchHomeOverlays();
+      return;
+    }
+
+    const enterDuelBtn = target.closest<HTMLElement>('[data-action="enter-duel-room"]');
+    if (enterDuelBtn) {
+      const roomId = enterDuelBtn.dataset.room;
+      if (roomId) void enterDuelRoom(roomId);
+      return;
+    }
+
+    const deleteDuelBtn = target.closest<HTMLElement>('[data-action="delete-duel-game"]');
+    if (deleteDuelBtn) {
+      const roomId = deleteDuelBtn.dataset.room;
+      if (roomId) void confirmDeleteDuelGame(roomId);
+      return;
+    }
+
+    if (target.closest('[data-action="open-duel-games"]')) {
+      state.socialOpen = true;
+      state.socialTab = 'games';
+      state.socialView = 'list';
+      patchHomeOverlays();
+      return;
+    }
+
     const startCoopBtn = target.closest<HTMLElement>('[data-action="start-coop-room"]');
     if (startCoopBtn) {
       const roomId = startCoopBtn.dataset.room;
@@ -2109,6 +2325,28 @@ function bindSocialEventsOnce(): void {
       setCoopSetupOpen(true, state.coopSetupFriendId);
       return;
     }
+
+    if (target.closest('[data-action="duel-pvp"]') && state.screen === 'home') {
+      if (!hasProfile()) {
+        promptForName();
+        return;
+      }
+      const friends = getFriends();
+      if (friends.length === 0) {
+        state.playType = 'multiplayer';
+        setSocialOpen(true);
+        state.socialTab = 'add';
+        showSocialToast('Add your friend first — then send a duel invite.');
+        return;
+      }
+      if (!state.coopSetupFriendId) {
+        state.coopSetupFriendId = friends[0]!.id;
+        patchMultiplayerPanel();
+      }
+      state.playType = 'multiplayer';
+      setDuelSetupOpen(true, state.coopSetupFriendId);
+      return;
+    }
   });
 
   app.addEventListener('input', (e) => {
@@ -2134,6 +2372,9 @@ function bindSocialEventsOnce(): void {
     if (state.coopSetupOpen) {
       e.preventDefault();
       setCoopSetupOpen(false);
+    } else if (state.duelSetupOpen) {
+      e.preventDefault();
+      setDuelSetupOpen(false);
     } else if (state.socialOpen) {
       e.preventDefault();
       setSocialOpen(false);
@@ -2177,25 +2418,30 @@ function renderExplore(): string {
   const round = state.round!;
   const showYearHint = round.answer.year != null;
   const coopRoom = state.isCoopRun && state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
+  const duelRoom = state.isDuelRun && state.duelRoomId ? getDuelRoom(state.duelRoomId) : null;
   const coopHud =
     coopRoom && state.coopMyRole ? renderCoopHud(coopRoom, state.coopMyRole) : '';
+  const duelHud =
+    duelRoom && state.duelMyRole ? renderDuelHud(duelRoom, state.duelMyRole) : '';
+  const modePill = coopRoom ? 'Co-op' : duelRoom ? '1v1 Duel' : state.session?.isDaily ? 'Daily' : state.mode === 'classic' && state.classicRegion !== 'world' ? `Classic · ${classicRegionLabel(state.classicRegion)}` : modeLabel(state.mode!);
+  const hiddenPin = isHiddenPinRun();
 
   return `
     <div class="screen screen-explore">
       <div class="top-bar">
         <button class="icon-btn" data-action="quit" aria-label="Quit">←</button>
         <div class="top-bar-center">
-          <span class="mode-pill mode-${state.mode}">${coopRoom ? 'Co-op' : state.session?.isDaily ? 'Daily' : state.mode === 'classic' && state.classicRegion !== 'world' ? `Classic · ${classicRegionLabel(state.classicRegion)}` : modeLabel(state.mode!)}</span>
+          <span class="mode-pill mode-${state.mode}">${modePill}</span>
           <span class="round-title">Round ${state.session?.roundNumber ?? 1}</span>
         </div>
         <div class="top-bar-right">
-          ${state.isCoopRun ? '' : renderGameAvatarButton()}
-          ${state.isCoopRun ? '' : renderSessionHud()}
+          ${hiddenPin ? '' : renderGameAvatarButton()}
+          ${hiddenPin ? '' : renderSessionHud()}
         </div>
       </div>
 
-      ${coopHud}
-      ${state.isCoopRun ? '' : renderGameChrome()}
+      ${coopHud}${duelHud}
+      ${hiddenPin ? '' : renderGameChrome()}
 
       ${round.isAiGenerated ? '<div class="ai-banner">Speculative / AI-assisted scene</div>' : ''}
       ${state.useMapillaryLive ? '<div class="mapillary-live-banner">🌐 Mapillary Live — streaming via API</div>' : ''}
@@ -2204,11 +2450,11 @@ function renderExplore(): string {
       ${renderReportPanoramaButton(round.panoramaId)}
 
       <div class="explore-hud">
-        <p class="explore-tip">${state.isCoopRun ? 'Co-op: your pin stays hidden until reveal' : 'Drag to look around · Pinch to zoom'}</p>
+        <p class="explore-tip">${hiddenPin ? 'Your pin stays hidden until both players have guessed' : 'Drag to look around · Pinch to zoom'}</p>
         ${showYearHint ? '<p class="explore-tip accent">You will also guess the year</p>' : ''}
-        <button class="btn btn-primary btn-lg" data-action="guess">${state.isCoopRun ? 'Drop your hidden pin' : 'Drop your pin'}</button>
+        <button class="btn btn-primary btn-lg" data-action="guess">${hiddenPin ? 'Drop your hidden pin' : 'Drop your pin'}</button>
       </div>
-      ${renderCoopMatchChatChrome()}
+      ${state.isCoopRun ? renderCoopMatchChatChrome() : ''}
       ${renderRoundIntroOverlay({
         open: state.roundIntroOpen,
         mode: state.mode ?? 'classic',
@@ -2226,25 +2472,29 @@ function renderGuess(): string {
     state.mode === 'past' ? 1920 : state.mode === 'future' ? 2050 : new Date().getFullYear();
   const year = state.guess?.year ?? defaultYear;
   const coopRoom = state.isCoopRun && state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
+  const duelRoom = state.isDuelRun && state.duelRoomId ? getDuelRoom(state.duelRoomId) : null;
   const coopHud =
     coopRoom && state.coopMyRole ? renderCoopHud(coopRoom, state.coopMyRole) : '';
+  const duelHud =
+    duelRoom && state.duelMyRole ? renderDuelHud(duelRoom, state.duelMyRole) : '';
+  const hiddenPin = isHiddenPinRun();
 
   return `
     <div class="screen screen-guess">
       <div class="guess-header">
         <button class="icon-btn" data-action="back-explore" aria-label="Back">←</button>
         <div class="guess-header-text">
-          <h2>${state.isCoopRun ? 'Hidden team pin' : 'Where is this?'}</h2>
+          <h2>${hiddenPin ? 'Hidden pin' : 'Where is this?'}</h2>
           ${needsYear ? '<p>Tap the map, then set the year</p>' : '<p>Tap the map to place your pin</p>'}
         </div>
         <div class="guess-header-right">
-          ${state.isCoopRun ? '' : renderGameAvatarButton()}
-          ${state.isCoopRun ? '' : state.session ? renderSessionHud() : ''}
+          ${hiddenPin ? '' : renderGameAvatarButton()}
+          ${hiddenPin ? '' : state.session ? renderSessionHud() : ''}
         </div>
       </div>
 
-      ${coopHud}
-      ${state.isCoopRun ? '' : renderGameChrome()}
+      ${coopHud}${duelHud}
+      ${hiddenPin ? '' : renderGameChrome()}
 
       <div id="guess-map" class="map-container"></div>
 
@@ -2255,19 +2505,19 @@ function renderGuess(): string {
           <div class="year-control">
             <div class="year-labels">
               <label for="year-slider">Year guess</label>
-              <output id="year-value" class="year-value">${year}</output>
+              <output id="year-value" class="year-value">${state.mode === 'past' ? formatPastYear(year) : year}</output>
             </div>
             <input id="year-slider" type="range"
-              min="${state.mode === 'past' ? 1000 : 2026}"
+              min="${state.mode === 'past' ? -2600 : 2026}"
               max="${state.mode === 'past' ? 2025 : 2200}"
-              step="1" value="${year}" />
+              step="${state.mode === 'past' ? 10 : 1}" value="${year}" />
             <div class="era-chips">${getEraChips(state.mode!, year)}</div>
           </div>`
             : ''
         }
         <button class="btn btn-primary btn-lg" data-action="submit" disabled>Submit guess</button>
       </div>
-      ${renderCoopMatchChatChrome()}
+      ${state.isCoopRun ? renderCoopMatchChatChrome() : ''}
     </div>
   `;
 }
@@ -2276,10 +2526,10 @@ function getEraChips(mode: GameMode, current: number): string {
   const chips =
     mode === 'past'
       ? [
-          { label: 'Medieval', year: 1350 },
-          { label: '1800s', year: 1850 },
-          { label: '1920s', year: 1925 },
-          { label: '1960s', year: 1965 },
+          { label: 'Antike', year: -500 },
+          { label: 'Mittelalter', year: 1200 },
+          { label: '1800er', year: 1850 },
+          { label: 'Vintage', year: 2007 },
         ]
       : [
           { label: '2030', year: 2030 },
@@ -2342,7 +2592,7 @@ function renderResult(): string {
         <h3>${round.answer.label}</h3>
         ${
           round.answer.year
-            ? `<p class="answer-year">Actual: <strong>${round.answer.year}</strong>${guess.year != null ? ` · You: ${guess.year}` : ''}</p>`
+            ? `<p class="answer-year">Actual: <strong>${state.mode === 'past' ? formatPastYear(round.answer.year) : round.answer.year}</strong>${guess.year != null ? ` · You: ${state.mode === 'past' ? formatPastYear(guess.year) : guess.year}` : ''}</p>`
             : ''
         }
         <p>${round.context}</p>
@@ -2419,7 +2669,7 @@ function renderLibraryListItem(
                     <strong class="library-title">${p.title}</strong>
                     ${renderPanoramaBadges(p, { hideSource: true, compact: true })}
                     ${options?.hideLocality ? '' : `<span class="library-region">${escapeHtml(locality)}</span>`}
-                    <span class="library-tags">${p.modes.join(' · ')}${p.mapillaryLive ? ' · live stream' : ''}</span>
+                    <span class="library-tags">${p.modes.join(' · ')}${p.year != null && p.modes.includes('past') ? ` · ${formatPastYear(p.year)}` : ''}${p.mapillaryLive ? ' · live stream' : ''}</span>
                     ${renderPanoramaDifficultyStars(p.id, { interactive: true, compact: true })}
                   </div>
                   <button class="library-delete" data-delete="${p.id}" aria-label="Move ${p.title} to trash" title="Move to trash">🗑</button>
@@ -2430,6 +2680,7 @@ function renderLibrary(): string {
   const items = getVisiblePanoramas();
   const trashed = getTrashedPanoramas();
   const groups = groupVisiblePanoramasBySource(items);
+  const pastGroup = groupPastPanoramas(items);
   const indexById = new Map(items.map((p, i) => [p.id, i]));
   const reviewItems = getPanoramasPendingReview();
   const pendingCount = getPendingReportCount();
@@ -2443,6 +2694,54 @@ function renderLibrary(): string {
               ${trashed.length > 0 ? `<button class="btn btn-secondary" data-action="restore-all-trash">Restore all from trash</button>` : ''}
             </div>`
       : `<div class="library-groups">
+              ${
+                pastGroup
+                  ? (() => {
+                      const open = isLibraryPastGroupExpanded();
+                      return `
+              <section class="library-group library-past-group${open ? ' open' : ''}" data-library-group="past">
+                <button
+                  type="button"
+                  class="library-group-header"
+                  data-action="toggle-library-past-group"
+                  aria-expanded="${open}"
+                >
+                  <span class="library-group-chevron" aria-hidden="true">▸</span>
+                  <span class="library-source-badge library-source-past">Vergangenheit</span>
+                  <span class="library-group-meta">${pastGroup.items.length} Past-Szene${pastGroup.items.length === 1 ? '' : 'n'} · Jahr raten</span>
+                </button>
+                <ul class="library-list library-group-list">
+                  ${pastGroup.eras
+                    .map((eraGroup) => {
+                      const eraOpen = isLibraryPastEraExpanded(eraGroup.key);
+                      return `
+                  <li class="library-subgroup library-past-era${eraOpen ? ' open' : ''}">
+                    <button
+                      type="button"
+                      class="library-subgroup-header"
+                      data-action="toggle-library-past-era"
+                      data-era="${eraGroup.key}"
+                      aria-expanded="${eraOpen}"
+                    >
+                      <span class="library-group-chevron" aria-hidden="true">▸</span>
+                      <span class="library-country-label">${escapeHtml(eraGroup.label)}</span>
+                      <span class="library-group-meta">${eraGroup.items.length} scene${eraGroup.items.length === 1 ? '' : 's'}</span>
+                    </button>
+                    <ul class="library-list library-subgroup-list">
+                      ${eraGroup.items
+                        .map((p) =>
+                          renderLibraryListItem(p, indexById.get(p.id) ?? 0, { hideLocality: true }),
+                        )
+                        .join('')}
+                    </ul>
+                  </li>`;
+                    })
+                    .join('')}
+                </ul>
+              </section>`;
+                    })()
+                  : ''
+              }
               ${groups
                 .map((group) => {
                   const open = isLibraryGroupExpanded(group.key);
@@ -2532,7 +2831,7 @@ function renderLibrary(): string {
         <button class="icon-btn" data-action="home" aria-label="Home">←</button>
         <div>
           <h2>Panorama Library</h2>
-          <p>${items.length} active · ${groups.length} sources · tap to expand by country${isFirebaseConfigured() ? ' · ★ cloud' : ''}${showReviewTab && pendingCount > 0 ? ` · ${pendingCount} zur Prüfung` : ''}</p>
+          <p>${items.length} active · ${pastGroup ? `${pastGroup.items.length} Past · ` : ''}${groups.length} sources · tap to expand${isFirebaseConfigured() ? ' · ★ cloud' : ''}${showReviewTab && pendingCount > 0 ? ` · ${pendingCount} zur Prüfung` : ''}</p>
         </div>
         <button class="icon-btn library-map-btn" data-action="library-map" aria-label="World map" title="World map">🌍</button>
       </div>
@@ -2666,6 +2965,9 @@ function bindScreenEvents(screen: Screen): void {
   if (screen === 'coop-reveal') bindCoopRevealEvents();
   if (screen === 'coop-vote') bindCoopVoteEvents();
   if (screen === 'coop-result') bindCoopResultEvents();
+  if (screen === 'duel-wait') bindDuelWaitEvents();
+  if (screen === 'duel-reveal') bindDuelRevealEvents();
+  if (screen === 'duel-result') bindDuelResultEvents();
 }
 
 function patchAvatarEditor(): void {
@@ -2978,6 +3280,12 @@ function resetStateForLogin(): void {
     coopSetupFriendId: null,
     coopSyncMode: 'live',
     coopGameMode: 'classic',
+    isDuelRun: false,
+    duelRoomId: null,
+    duelMyRole: null,
+    duelSetupOpen: false,
+    duelSyncMode: 'live',
+    duelGameMode: 'classic',
     socialCloudSearch: [],
     matchChatOpen: false,
     matchChatDraft: '',
@@ -3329,9 +3637,82 @@ function bindCoopResultEvents(): void {
   });
 }
 
+function bindDuelWaitEvents(): void {
+  app.querySelector('[data-action="quit"]')?.addEventListener('click', goHome);
+  app.querySelector('[data-action="duel-refresh"]')?.addEventListener('click', () => {
+    if (!state.duelRoomId) return;
+    void pullDuelRoomFromFirestore(state.duelRoomId).then((remote) => {
+      if (remote) applyRemoteDuelRoom(remote);
+      routeDuelScreen();
+    });
+  });
+  app.querySelector('[data-action="duel-simulate-partner"]')?.addEventListener('click', () => {
+    const room = state.duelRoomId ? getDuelRoom(state.duelRoomId) : null;
+    if (!room || !state.round) return;
+    simulatePartnerPinForDuel(room.id, state.round.answer.lat, state.round.answer.lng);
+    routeDuelScreen();
+  });
+}
+
+function bindDuelRevealEvents(): void {
+  app.querySelector('[data-action="duel-show-result"]')?.addEventListener('click', () => {
+    if (!state.duelRoomId) return;
+    resolveDuelRound(state.duelRoomId);
+    routeDuelScreen();
+  });
+  app.querySelector('[data-action="quit"]')?.addEventListener('click', goHome);
+}
+
+function bindDuelResultEvents(): void {
+  app.querySelector('[data-action="quit"]')?.addEventListener('click', () => {
+    if (state.duelRoomId && getDuelRoom(state.duelRoomId)?.matchWinner) {
+      finishDuelRoom(state.duelRoomId);
+    }
+    goHome();
+  });
+  app.querySelector('[data-action="duel-next-round"]')?.addEventListener('click', () => {
+    if (!state.duelRoomId) return;
+    const next = startDuelNextRound(state.duelRoomId);
+    if (!next) {
+      showSocialToast('No more scenes for this duel.');
+      return;
+    }
+    const round = getDuelRound(next);
+    if (!round) return;
+    state.round = round;
+    state.guess = null;
+    state.session = {
+      hearts: MAX_HEARTS,
+      score: 0,
+      roundNumber: next.roundNumber,
+      usedRoundIds: next.usedRoundIds,
+      lastLostHeart: false,
+      lastRoundPoints: 0,
+      usedItemsThisRound: [],
+      activeHint: null,
+    };
+    markPanoramaSeen(round.panoramaId);
+    routeDuelScreen();
+  });
+  app.querySelector('[data-action="duel-play-again"]')?.addEventListener('click', () => {
+    const room = state.duelRoomId ? getDuelRoom(state.duelRoomId) : null;
+    if (!room) return goHome();
+    finishDuelRoom(room.id);
+    state.coopSetupFriendId = room.guestFriendId;
+    state.duelSyncMode = room.syncMode;
+    state.duelGameMode = room.gameMode;
+    state.screen = 'home';
+    state.isDuelRun = false;
+    state.duelRoomId = null;
+    state.duelMyRole = null;
+    setDuelSetupOpen(true, room.guestFriendId);
+    render();
+  });
+}
+
 function bindExploreEvents(): void {
   app.querySelector('[data-action="quit"]')?.addEventListener('click', () => {
-    if (state.isCoopRun) goHome();
+    if (isHiddenPinRun()) goHome();
     else quitRun();
   });
   app.querySelector('[data-action="guess"]')?.addEventListener('click', () => {
@@ -3356,7 +3737,10 @@ function bindGuessEvents(): void {
   slider?.addEventListener('input', () => {
     const year = Number(slider.value);
     const output = app.querySelector('#year-value');
-    if (output) output.textContent = slider.value;
+    if (output) {
+      output.textContent =
+        state.mode === 'past' ? formatPastYear(year) : slider.value;
+    }
     if (state.guess) state.guess.year = year;
     app.querySelectorAll('.era-chip').forEach((chip) => {
       chip.classList.toggle('active', Number((chip as HTMLElement).dataset.year) === year);
@@ -3482,6 +3866,25 @@ function bindLibraryEvents(): void {
         state.libraryTab = tab;
         render();
       }
+    });
+  });
+
+  app.querySelectorAll('[data-action="toggle-library-past-group"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleLibraryPastGroupExpanded();
+      render();
+    });
+  });
+
+  app.querySelectorAll('[data-action="toggle-library-past-era"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const era = (btn as HTMLElement).dataset.era as import('./types').PastEra;
+      if (era) toggleLibraryPastEraExpanded(era);
+      render();
     });
   });
 
@@ -3801,6 +4204,9 @@ function maybeAwardCoopXp(roomId: string): void {
     year: room.finalPin.year,
   });
   state.lastXpAward = applyXpAward(awardXpForCoop(score.points, score.maxPoints));
+  if (room.gameMode) {
+    tryAddJournalEntry(round, score, room.gameMode, { coop: true });
+  }
 }
 
 function startGame(mode: GameMode): void {
@@ -3947,6 +4353,11 @@ function submitGuess(): void {
     return;
   }
 
+  if (state.isDuelRun) {
+    submitDuelGuess();
+    return;
+  }
+
   const score = scoreGuess(state.round, state.guess);
   recordRoundResult(
     state.round.answer.lat,
@@ -3967,6 +4378,10 @@ function submitGuess(): void {
       daily: Boolean(state.session.isDaily),
     }),
   );
+
+  if (state.mode) {
+    tryAddJournalEntry(state.round, score, state.mode);
+  }
 
   if (state.session.isDaily) {
     markDailyCompleted();
@@ -4020,6 +4435,30 @@ function renderCoopResultScreen(): string {
       score.maxPoints,
       renderXpGainBanner(state.lastXpAward),
     ) + renderCoopMatchChatChrome()
+  );
+}
+
+function renderDuelWait(): string {
+  const room = getDuelRoom(state.duelRoomId!);
+  if (!room || !state.duelMyRole) return '';
+  return renderDuelWaitScreen(room, state.duelMyRole, { offlineDemo: !isFirebaseConfigured() });
+}
+
+function renderDuelRevealScreen(): string {
+  const room = getDuelRoom(state.duelRoomId!);
+  if (!room) return '';
+  return renderDuelReveal(room);
+}
+
+function renderDuelResultScreen(): string {
+  const room = getDuelRoom(state.duelRoomId!);
+  if (!room || !state.duelMyRole) return '';
+  maybeAwardDuelXp(state.duelRoomId!);
+  return renderDuelRoundResult(
+    room,
+    state.duelMyRole,
+    room.roundTitle,
+    renderXpGainBanner(state.lastXpAward),
   );
 }
 
@@ -4129,11 +4568,17 @@ function startActiveCoopRoomListener(roomId: string): void {
 
 function startCloudCoopSync(onChange?: () => void): void {
   startCloudCoopInviteListener(onChange);
+  startCloudDuelInviteListener(onChange);
   void waitForFirebaseUid().then(async (uid) => {
     if (!uid) return;
     await pullMyCoopRoomsFromFirestore(uid);
+    await pullMyDuelRoomsFromFirestore(uid);
     startMyCoopRoomsListener(uid, () => {
       if (state.isCoopRun && state.coopRoomId) routeCoopScreen();
+      else onChange?.();
+    });
+    startMyDuelRoomsListener(uid, () => {
+      if (state.isDuelRun && state.duelRoomId) routeDuelScreen();
       else onChange?.();
     });
   });
@@ -4308,15 +4753,327 @@ function sendCoopInviteFromSetup(): void {
   patchHomeOverlays();
 }
 
+function maybeAwardDuelXp(roomId: string): void {
+  const room = getDuelRoom(roomId);
+  const round = state.round;
+  if (!room || !round || !state.duelMyRole) return;
+  if (room.phase !== 'round_result' && room.phase !== 'done') return;
+  if (room.lastRoundHostPoints == null || room.lastRoundGuestPoints == null) return;
+
+  const awardKey = `${roomId}-r${room.roundNumber}`;
+  if (duelXpAwardedKey === awardKey) return;
+  duelXpAwardedKey = awardKey;
+
+  const myPoints =
+    state.duelMyRole === 'host' ? room.lastRoundHostPoints : room.lastRoundGuestPoints;
+  const maxPoints = Math.max(room.lastRoundHostPoints, room.lastRoundGuestPoints, 5000);
+  state.lastXpAward = applyXpAward(awardXpForCoop(myPoints, maxPoints));
+
+  if (room.matchWinner && room.gameMode) {
+    const myPin = state.duelMyRole === 'host' ? room.hostPin : room.guestPin;
+    if (myPin) {
+      const score = scoreGuess(round, { lat: myPin.lat, lng: myPin.lng, year: myPin.year });
+      tryAddJournalEntry(round, score, room.gameMode);
+    }
+  }
+}
+
+function clearDuelLivePoll(): void {
+  if (duelLivePollTimer) {
+    clearInterval(duelLivePollTimer);
+    duelLivePollTimer = null;
+  }
+}
+
+const DUEL_SYNC_SCREENS = new Set(['duel-wait', 'duel-reveal']);
+
+function syncDuelLivePoll(): void {
+  clearDuelLivePoll();
+  if (!state.isDuelRun || !state.duelRoomId || !DUEL_SYNC_SCREENS.has(state.screen)) return;
+
+  const poll = () => {
+    if (!state.isDuelRun || !state.duelRoomId) return;
+    void pullDuelRoomFromFirestore(state.duelRoomId).then((remote) => {
+      if (remote) applyRemoteDuelRoom(remote);
+      routeDuelScreen();
+    });
+  };
+
+  poll();
+  duelLivePollTimer = setInterval(poll, 1200);
+}
+
+function stopDuelFirestoreListener(): void {
+  activeDuelRoomUnsub?.();
+  activeDuelRoomUnsub = null;
+}
+
+function startActiveDuelRoomListener(roomId: string): void {
+  stopDuelFirestoreListener();
+  const unsub = subscribeDuelRoom(roomId, () => {
+    if (state.isDuelRun && state.duelRoomId === roomId) routeDuelScreen();
+  });
+  if (unsub) activeDuelRoomUnsub = unsub;
+}
+
+function exitDuelGameEnded(message: string): void {
+  clearDuelLivePoll();
+  stopDuelFirestoreListener();
+  setActiveDuelRoomId(null);
+  state.isDuelRun = false;
+  state.duelRoomId = null;
+  state.duelMyRole = null;
+  state.screen = 'home';
+  showSocialToast(message);
+  render();
+}
+
+function routeDuelScreen(): void {
+  const roomId = state.duelRoomId;
+  if (!roomId) {
+    goHome();
+    return;
+  }
+  const room = getResolvedDuelRoom(roomId);
+  if (!room) {
+    goHome();
+    return;
+  }
+
+  if (room.phase === 'done' && !room.matchWinner) {
+    exitDuelGameEnded('This duel was ended.');
+    return;
+  }
+
+  const myRole = state.duelMyRole ?? getMyDuelRole(room, getPlayerId());
+  state.duelMyRole = myRole;
+
+  const fresh = getResolvedDuelRoom(roomId)!;
+
+  switch (fresh.phase) {
+    case 'explore':
+    case 'host_pinned':
+    case 'guest_pinned':
+      state.screen = canISubmitDuelPin(fresh, myRole) ? 'explore' : 'duel-wait';
+      if (state.screen === 'explore') {
+        const round = getDuelRound(fresh);
+        if (round) {
+          state.round = round;
+          state.session = state.session ?? {
+            hearts: MAX_HEARTS,
+            score: 0,
+            roundNumber: fresh.roundNumber,
+            usedRoundIds: fresh.usedRoundIds,
+            lastLostHeart: false,
+            lastRoundPoints: 0,
+            usedItemsThisRound: [],
+            activeHint: null,
+          };
+          state.session.roundNumber = fresh.roundNumber;
+          triggerRoundIntro(round.id);
+        }
+      }
+      break;
+    case 'reveal':
+      state.screen = 'duel-reveal';
+      break;
+    case 'round_result':
+    case 'done':
+      state.screen = 'duel-result';
+      break;
+    default:
+      if (fresh.phase === 'invite_pending') {
+        state.screen = 'duel-wait';
+        break;
+      }
+      goHome();
+      return;
+  }
+
+  if (DUEL_SYNC_SCREENS.has(state.screen)) syncDuelLivePoll();
+  else clearDuelLivePoll();
+  render();
+}
+
+async function confirmDeleteDuelGame(roomId: string): Promise<void> {
+  const room = getDuelRoom(roomId);
+  if (!room) return;
+  const myId = getPlayerId();
+  const partner = room.hostPlayerId === myId ? room.guestName : room.hostName;
+  const ok = await confirmDialog(
+    `Delete 1v1 duel vs ${partner}? This cannot be undone.`,
+    { title: 'Delete duel', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true },
+  );
+  if (!ok) return;
+  abandonDuelGame(roomId);
+  if (state.isDuelRun && state.duelRoomId === roomId) {
+    state.isDuelRun = false;
+    state.duelRoomId = null;
+    state.duelMyRole = null;
+    goHome();
+  } else if (state.socialOpen) {
+    patchHomeOverlays();
+  } else if (state.screen === 'home') {
+    render();
+  }
+  showSocialToast('Duel deleted.');
+}
+
+async function enterDuelRoom(roomId: string): Promise<void> {
+  const remote = await pullDuelRoomFromFirestore(roomId);
+  if (remote) applyRemoteDuelRoom(remote);
+
+  let room = getDuelRoom(roomId);
+  if (!room) {
+    showSocialToast('Duel not found.');
+    return;
+  }
+
+  if (room.phase === 'done' && room.matchWinner) {
+    showSocialToast('This duel is already finished.');
+    return;
+  }
+
+  const myUid = getPlayerId();
+  const myRole = getMyDuelRole(room, myUid);
+
+  if (myRole === 'host' && !room.guestAccepted) {
+    showSocialToast(`Waiting for ${room.guestName} to accept…`);
+    if (state.socialOpen) patchHomeOverlays();
+    return;
+  }
+
+  const inProgress = ['explore', 'host_pinned', 'guest_pinned', 'reveal', 'round_result'].includes(
+    room.phase,
+  );
+  const started = startDuelRoom(roomId);
+  room = getDuelRoom(roomId)!;
+
+  if (!started && !inProgress && room.phase !== 'done') {
+    showSocialToast('Cannot join this duel yet.');
+    return;
+  }
+
+  if (!started && inProgress) setActiveDuelRoomId(roomId);
+
+  const round = getDuelRound(room);
+  if (!round && room.phase !== 'round_result' && room.phase !== 'done') {
+    showSocialToast('Scene not found for this duel.');
+    return;
+  }
+
+  closeHomeOverlays();
+  destroyPanorama();
+  destroyMap();
+  state.isDuelRun = true;
+  state.isCoopRun = false;
+  state.duelRoomId = roomId;
+  state.duelMyRole = myRole;
+  state.coopRoomId = null;
+  state.coopMyRole = null;
+  state.playType = 'multiplayer';
+  state.mode = room.gameMode;
+  state.round = round ?? state.round;
+  state.guess = null;
+  state.session = {
+    hearts: MAX_HEARTS,
+    score: 0,
+    roundNumber: room.roundNumber,
+    usedRoundIds: room.usedRoundIds,
+    lastLostHeart: false,
+    lastRoundPoints: 0,
+    usedItemsThisRound: [],
+    activeHint: null,
+  };
+  if (round) markPanoramaSeen(round.panoramaId);
+  duelXpAwardedKey = null;
+  startActiveDuelRoomListener(roomId);
+  routeDuelScreen();
+}
+
+async function acceptAndJoinDuelInvite(inviteId: string): Promise<void> {
+  const remoteInvite = await pullDuelInviteFromFirestore(inviteId);
+  if (remoteInvite) applyRemoteDuelInvite(remoteInvite);
+
+  const invite = remoteInvite ?? loadDuelInvitesLocal().find((i) => i.id === inviteId);
+  if (!invite) {
+    showSocialToast('Invite not found.');
+    return;
+  }
+
+  const remoteRoom = await pullDuelRoomFromFirestore(invite.roomId);
+  if (remoteRoom) applyRemoteDuelRoom(remoteRoom);
+
+  acceptDuelInvite(inviteId);
+  setSocialOpen(false);
+  await enterDuelRoom(invite.roomId);
+  void syncSocialFromCloud();
+  showSocialToast('Duel accepted — good luck!');
+}
+
+function submitDuelGuess(): void {
+  if (!state.guess || !state.round || !state.duelRoomId || !state.duelMyRole) return;
+  if (!Number.isFinite(state.guess.lat) || !Number.isFinite(state.guess.lng)) return;
+  const room = getDuelRoom(state.duelRoomId);
+  if (!room) return;
+
+  const pin: CoopPin = {
+    lat: state.guess.lat,
+    lng: state.guess.lng,
+    label: state.duelMyRole === 'host' ? room.hostName : room.guestName,
+    at: Date.now(),
+  };
+  if (state.guess.year != null && Number.isFinite(state.guess.year)) {
+    pin.year = state.guess.year;
+  }
+  submitDuelPin(state.duelRoomId, state.duelMyRole, pin);
+  routeDuelScreen();
+}
+
+function sendDuelInviteFromSetup(): void {
+  const profile = getProfile();
+  if (!profile || !state.coopSetupFriendId) return;
+  const friend = getFriendById(state.coopSetupFriendId);
+  if (!friend) return;
+
+  const invite = createDuelInvite(
+    getPlayerId(),
+    profile.name,
+    friend.id,
+    friend.name,
+    state.duelSyncMode,
+    state.duelGameMode,
+  );
+  if (!invite) {
+    showSocialToast('No scenes available for that mode.');
+    return;
+  }
+
+  setDuelSetupOpen(false);
+  state.socialOpen = true;
+  state.socialTab = 'games';
+  state.socialView = 'list';
+  state.socialSelectedFriendId = friend.id;
+  showSocialToast(`Duel invite sent to ${friend.name}!`);
+  patchHomeOverlays();
+}
+
 function goHome(): void {
   stopCoopFirestoreListener();
+  stopDuelFirestoreListener();
   clearCoopLivePoll();
+  clearDuelLivePoll();
   dismissRoundIntro();
   stopMatchChatListener();
   if (state.coopRoomId && state.screen === 'coop-result') {
     finishCoopRoom(state.coopRoomId);
   } else if (state.isCoopRun && state.coopRoomId) {
     leaveCoopRunLocally();
+  }
+  if (state.duelRoomId && getDuelRoom(state.duelRoomId)?.matchWinner) {
+    finishDuelRoom(state.duelRoomId);
+  } else if (state.isDuelRun && state.duelRoomId) {
+    leaveDuelRunLocally();
   }
   clearSocialOnlineTimer();
   state = {
@@ -4356,6 +5113,12 @@ function goHome(): void {
     coopSetupFriendId: null,
     coopSyncMode: state.coopSyncMode,
     coopGameMode: state.coopGameMode,
+    isDuelRun: false,
+    duelRoomId: null,
+    duelMyRole: null,
+    duelSetupOpen: false,
+    duelSyncMode: state.duelSyncMode,
+    duelGameMode: state.duelGameMode,
     socialCloudSearch: [],
     matchChatOpen: false,
     matchChatDraft: '',
@@ -4600,6 +5363,57 @@ function initCoopRevealMap(): void {
     room.hostPlayerId,
     room.guestFriendId,
   );
+}
+
+function initDuelRevealMap(): void {
+  const room = state.duelRoomId ? getDuelRoom(state.duelRoomId) : null;
+  if (!room?.hostPin || !room.guestPin) return;
+  initCoopDualPinMap(
+    'duel-reveal-map',
+    room.hostPin,
+    room.guestPin,
+    room.hostName,
+    room.guestName,
+    room.hostPlayerId,
+    room.guestUid,
+  );
+}
+
+function initDuelResultMap(): void {
+  const room = state.duelRoomId ? getDuelRoom(state.duelRoomId) : null;
+  const round = state.round;
+  if (!room?.hostPin || !room.guestPin || !round) return;
+  destroyMap();
+  const bounds = new maplibregl.LngLatBounds();
+  bounds.extend([room.hostPin.lng, room.hostPin.lat]);
+  bounds.extend([room.guestPin.lng, room.guestPin.lat]);
+  bounds.extend([round.answer.lng, round.answer.lat]);
+  map = new maplibregl.Map({
+    container: 'duel-result-map',
+    style: MAP_STYLE,
+    bounds,
+    fitBoundsOptions: { padding: 60, maxZoom: 6 },
+    attributionControl: { compact: true },
+  });
+  map.on('load', () => {
+    if (!map || !room.hostPin || !room.guestPin) return;
+    addCoopMapPin(map, room.hostPin.lng, room.hostPin.lat, {
+      pinVariant: 'host',
+      avatarConfig: resolvePlayerAvatar(room.hostPlayerId),
+      behavior: 'orbit-walk',
+      label: room.hostName.slice(0, 8),
+    });
+    addCoopMapPin(map, room.guestPin.lng, room.guestPin.lat, {
+      pinVariant: 'guest',
+      avatarConfig: resolvePlayerAvatar(room.guestUid),
+      behavior: 'idle-near',
+      label: room.guestName.slice(0, 8),
+    });
+    addCoopMapPin(map, round.answer.lng, round.answer.lat, {
+      pinVariant: 'answer',
+      label: '✓',
+    });
+  });
 }
 
 function initCoopVoteMap(): void {

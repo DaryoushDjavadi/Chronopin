@@ -4,6 +4,8 @@ import { getProfile } from '../lib/profile';
 import { isFirebaseConfigured } from '../lib/firebase';
 import type { CoopInvite } from './coop';
 import { getCoopGamesAttentionCount } from './coop';
+import type { DuelInvite } from './duel';
+import { getDuelGamesAttentionCount } from './duel';
 import {
   directoryUserToFriend,
   getDirectoryUser,
@@ -56,6 +58,7 @@ const FRIEND_REGISTRY: Record<string, FriendProfile> = {};
 let cloudFriendIds: string[] | null = null;
 let cloudIncomingRequests: FriendRequest[] = [];
 let cloudIncomingCoopInvites: CoopInvite[] = [];
+let cloudIncomingDuelInvites: DuelInvite[] = [];
 
 export function registerCloudFriend(friend: FriendProfile): void {
   FRIEND_REGISTRY[friend.id] = friend;
@@ -79,6 +82,18 @@ export function getCloudIncomingCoopInvites(): CoopInvite[] {
 
 export function getCoopInviteBadgeCount(): number {
   return cloudIncomingCoopInvites.length;
+}
+
+export function setCloudIncomingDuelInvites(invites: DuelInvite[]): void {
+  cloudIncomingDuelInvites = invites;
+}
+
+export function getCloudIncomingDuelInvites(): DuelInvite[] {
+  return cloudIncomingDuelInvites;
+}
+
+export function getDuelInviteBadgeCount(): number {
+  return cloudIncomingDuelInvites.length;
 }
 
 function registerDirectoryFriend(user: DirectoryUser): FriendProfile {
@@ -257,7 +272,9 @@ export function getSocialBadgeCount(myPlayerId: string): number {
   return (
     getPendingRequestCount() +
     getCloudIncomingCoopInvites().length +
-    getCoopGamesAttentionCount(myPlayerId)
+    getCloudIncomingDuelInvites().length +
+    getCoopGamesAttentionCount(myPlayerId) +
+    getDuelGamesAttentionCount(myPlayerId)
   );
 }
 

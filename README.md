@@ -19,8 +19,8 @@ Guess **where** you are. In time modes, also guess **when**.
 
 **Spiel & Content**
 - Web-Prototyp (Vite + TS, mobile-first): Login → Home → Explore → Guess → Result
-- **83 statische Panoramen** (Wikimedia, Panoramax, KartaView) + optional **61 Mapillary Live** (API-Stream, kein JPG)
-- Panorama-Bibliothek: **aufklappbare Gruppen** nach Quelle → darunter **Land** (z.B. Germany, France) · **Papierkorb** aufklappbar · **Weltkarte**
+- **93 statische Panoramen** (Wikimedia, Panoramax, KartaView) + **21 historische Past-Szenen** (Antike bis Vintage-Fotos) + optional **61 Mapillary Live** (API-Stream, kein JPG)
+- Panorama-Bibliothek: **aufklappbare Gruppen** nach Quelle → darunter **Land** (z.B. Germany, France) · **Past: Vergangenheit** nach Epoche (Antike, Mittelalter, …) · **Papierkorb** aufklappbar · **Weltkarte**
 - **Szene melden** (⚠ oben rechts) — defekte/schwarze Panos melden; Solo: **nächste Szene ohne Herzverlust**
 - **Admin „Zur Überprüfung“** — gemeldete Szenen prüfen, behalten oder in Papierkorb (Admin / Dary / Daryoush)
 - **Panorama-Loading** — Spinner statt schwarzem Bild während Pannellum/Mapillary lädt
@@ -43,7 +43,7 @@ Guess **where** you are. In time modes, also guess **when**.
 - Multiplayer: **Gegner aus Freundesliste wählen**
 
 **Multiplayer — Co-op Decide (2 Spieler, Firebase)** ✅
-- Home → **Multiplayer** → Freund wählen → **Co-op Decide** (immer spielbar — nur 1v1/BR „Soon“)
+- Home → **Multiplayer** → Freund wählen → **Co-op Decide**
 - **Live** + **Async** · Classic / Past / Future
 - Ablauf: Invite → Accept → blind pin → Reveal → Team-Vote → Ergebnis
 - **Firestore-Sync** (`coopRooms`, `coopInvites`) · Host-Banner **Start game** auf Home
@@ -55,6 +55,15 @@ Guess **where** you are. In time modes, also guess **when**.
 - **Animierte Avatare** an Map-Pins (Co-op & Solo)
 - **Runden-Intro-Animation** beim Start jeder Runde (Overlay, ~2,8 s)
 - **XP & Level** — Punkte für gute Runden, Runs und Co-op; Level-Badge auf Home, XP-Balken in Player Info; Perks als Platzhalter für später
+- **Chrono Journal** — Postkarten-Album in Player Info (Thumb + Score pro abgeschlossener Runde)
+- **Home-UI** — polierte Mode-Karten (Classic/Past/Future) + Multiplayer-Karten (Co-op, 1v1, BR Soon)
+
+**Multiplayer — 1v1 Duel (Firebase)** ✅
+- Home → **Multiplayer** → Freund wählen → **1v1 Duel**
+- **Live** + **Async** · Classic / Past / Future · **3 Herzen** pro Spieler
+- Ablauf: Invite → Accept → blind pin → Reveal beider Pins → Runden-Sieger → nächste Runde bis ein Spieler 0 Herzen hat
+- **Firestore-Sync** (`duelRooms`, `duelInvites`) · Host-Banner **Start game** auf Home
+- **Match-Chat** während der Runde (wie Co-op)
 
 **Deploy**
 - **Strato**-Build (`npm run build:strato`, Base `/Chrono/`) — Live: **https://media-acht.de/Chrono/** — [`docs/STRATO_DEPLOY.md`](./docs/STRATO_DEPLOY.md)
@@ -63,9 +72,9 @@ Guess **where** you are. In time modes, also guess **when**.
 
 ### Bekannte Lücken (nach v1)
 
-- 1v1 Duel & Battle Royale — UI only („Coming soon“)
+- **Battle Royale** — UI only („Coming soon“)
 - Social-DMs nur lokal (kein Firestore-Chat zwischen Freunden)
-- MapLibre-Bundle groß (~1,7 MB JS) — lazy load später
+- MapLibre-Bundle groß (~1,8 MB JS) — lazy load später
 
 ### Kürzlich behoben (Polish-Pass)
 
@@ -78,6 +87,9 @@ Guess **where** you are. In time modes, also guess **when**.
 - Firestore composite indexes (`firestore.indexes.json`)
 - **Co-op Decide** zeigte fälschlich „Coming soon“ ohne Freund — behoben (Badge: Pick friend / Play)
 - **Panorama melden** + Admin-Review-Queue + Länder-Untergruppen in Library + Loading-Overlay
+- **1v1 Duel** — Firebase Live/Async, 3 Herzen, blind pin → reveal → Runden-Sieger
+- **Historische Past-Panoramen** — Wikimedia-Import (`npm run import:historical`), Library-Gruppe **Vergangenheit**
+- **Home-UI** — Mode- & Multiplayer-Karten poliert (GeoGuessr-Style Chips, Taglines, Farb-Akzente)
 
 ---
 
@@ -98,10 +110,11 @@ Guess **where** you are. In time modes, also guess **when**.
 
 **Social & Multiplayer**
 - ~~**Co-op Decide** (Live + Async)~~ ✅ **Firebase 2-Player** im Web-Prototyp
-- ~~**Match-Chat**~~ ✅ während Co-op (Firestore)
-- **Async Duell** — gleiche Szene, wer näher war gewinnt (ohne Live-Sync)
+- ~~**1v1 Duel** (Live + Async)~~ ✅ **Firebase 2-Player** im Web-Prototyp
+- ~~**Match-Chat**~~ ✅ während Co-op & Duel (Firestore)
+- **Async Duell ohne Live-Sync** — erledigt via Duel-Modus
 - **Party Code** — 4–8 Spieler, gleicher Seed, zeitlich begrenzt
-- 1v1 Duel mit Firebase/Supabase (UI vorbereitet, noch „Soon“)
+- 1v1 Duel mit Firebase/Supabase ~~(UI vorbereitet, noch „Soon“)~~ ✅ im Web-Prototyp
 - Freunde auf der Weltkarte (letzte Region / Online-Status)
 
 **Meta & Motivation**
@@ -223,7 +236,7 @@ You can mix eras later (e.g. "Any era" playlist).
 
 Social play is a core part of ChronoPin — not an afterthought. All multiplayer modes work with Classic, Past, and Future scenes.
 
-> **Web prototype (July 2026):** **Co-op Decide** playable with **Firebase** (2 devices). Login by name, friends, live/async co-op, in-match chat. 1v1 Duel & Battle Royale remain UI previews.
+> **Web prototype (July 2026):** **Co-op Decide** and **1v1 Duel** playable with **Firebase** (2 devices). Login by name, friends, live/async co-op & duel, in-match chat. Battle Royale remains UI preview.
 
 ### Co-op — Decide (highlight feature)
 You and a friend see the **same** scene and solve it as a team.

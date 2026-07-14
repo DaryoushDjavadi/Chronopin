@@ -14,10 +14,10 @@ The playable demo in [`web/`](../web/) uses only assets we can document and attr
 
 ### Panoramas (Classic mode test content)
 
-- **83 equirectangular JPGs** in `web/public/panoramas/` (Wikimedia Commons + Panoramax + one KartaView scene)
+- **83 equirectangular JPGs** in `web/public/panoramas/` (Wikimedia Commons + Panoramax + KartaView) — **93 total** after historical Past import (July 2026)
 - Catalog: `web/src/data/panoramas.ts` — source tags: `wikimedia`, `panoramax`, `kartaview`
 - Source: **Wikimedia Commons** (CC BY-SA 3.0 / 4.0 and similar — per-file in [`web/public/panoramas/LICENSE.md`](../web/public/panoramas/LICENSE.md)) plus **Panoramax** / **KartaView** where noted
-- Downloaded via Wikimedia `Special:FilePath?width=1536` (scaled) or `npm run import:panos` (`scripts/import-external-panos.mjs`, optional `--merge`, `--only city1,city2`)
+- Downloaded via Wikimedia `Special:FilePath?width=1536` (scaled) or `npm run import:panos` / `npm run import:historical` (`scripts/import-historical-panos.mjs` for Past-era scenes)
 - **Commercial use:** CC BY-SA generally allows commercial use **with attribution and ShareAlike on derivatives** — confirm per file; keep attribution in-app and in repo
 - **Not for final product volume alone** — curated/owned packs remain the commercial Classic strategy; Wikimedia/Panoramax/KartaView JPGs are fine for **prototype / dev testing**
 

@@ -74,20 +74,20 @@ npx -y firebase-tools@latest deploy --only firestore
 
 Admin-Aktionen (Spieler löschen, Items vergeben) erfordern die aktuellen `firestore.rules` mit `isAdminUser()` für Namen **admin**, **dary**, **daryoush** (Groß/Kleinschreibung egal).
 
-## 4. Mit Freundin spielen (Co-op)
+## 4. Mit Freundin spielen (Co-op & 1v1)
 
 **Beide** die gleiche URL öffnen:
 
 1. **Name eingeben** (Login-Maske) — jeder eigener Name  
 2. **👥 Friends** → Name suchen → **Add** → Anfrage annehmen  
-3. **Multiplayer** → Freundin wählen → **Co-op Decide** → Invite senden (**Live** oder **Async**)  
+3. **Multiplayer** → Freundin wählen → **Co-op Decide** oder **1v1 Duel** → Invite senden (**Live** oder **Async**)  
 4. Freundin: Home-Banner **Accept & play**  
 5. Du (Host): Home-Banner **Start game**  
 6. **Runden-Intro** (Animation) → Panorama → blind pinnen  
-7. Beide sehen **Reveal** → **Team vote** (Partner-Wahl sichtbar) → **Submit team guess** wenn ihr euch einig seid  
+7. **Co-op:** Reveal → Team vote → Submit · **Duel:** Reveal beider Pins → Runden-Sieger (3 Herzen pro Spieler)  
 8. **💬 Match-Chat** während der Runde  
 
-Sync über Firestore (`coopRooms`, `coopInvites`, `coopRooms/{id}/messages`).
+Sync über Firestore (`coopRooms`, `coopInvites`, `duelRooms`, `duelInvites`, `…/messages`).
 
 **Spiel löschen:** Friends → Tab **Games** (✕) oder **Delete game** im Wartebildschirm — Partner wird aus dem Match geworfen (`phase: done`).
 
@@ -140,7 +140,7 @@ Firestore-Collection `panoramaReports` — Rules mit deployen:
 npx -y firebase-tools@latest deploy --only firestore
 ```
 
-Ohne Mapillary-Token bleibt Mapillary Live deaktiviert; statische ~83 JPG-Szenen funktionieren weiter.
+Ohne Mapillary-Token bleibt Mapillary Live deaktiviert; statische **93** JPG-Szenen (inkl. historische Past) funktionieren weiter.
 
 ## 9. Factory Reset (Test)
 

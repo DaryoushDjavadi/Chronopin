@@ -10,6 +10,7 @@
     "import:panos": "node scripts/import-external-panos.mjs",
     "import:panos:merge": "node scripts/import-external-panos.mjs --source all --merge",
     "import:wikimedia": "node scripts/import-wikimedia-panos.mjs",
+    "import:historical": "node scripts/import-historical-panos.mjs",
     "test:mapillary": "node scripts/test-mapillary.mjs",
     "build:strato": "tsc && vite build --mode production"
   },

@@ -54,6 +54,27 @@ CC-licensed equirectangular panoramas from Wikimedia Commons. Attribution shown 
 
 Scaled via Wikimedia `Special:FilePath?width=1536` (~150–700 KB each).
 
+## Historical / Past mode (July 2026)
+
+CC-licensed 360×180 equirectangular scenes for **Past** mode (guess location + year). Import: `npm run import:historical`
+
+| File | Era | License |
+|---|---|---|
+| `giza-pyramids.jpg` | Antike · Pyramiden von Gizeh | CC BY-SA 3.0 · kallerna |
+| `france-noyon-cathedral.jpg` | Mittelalter · Kathedrale Noyon | CC BY-SA 3.0 · Diliff |
+| `dublin-st-patricks-nave.jpg` | Mittelalter · St Patrick's Dublin | CC BY-SA 3.0 · Diliff |
+| `dublin-st-patricks-choir.jpg` | Mittelalter · St Patrick's Dublin | CC BY-SA 3.0 · Diliff |
+| `london-st-etheldreda.jpg` | Mittelalter · London | CC BY-SA 3.0 · Diliff |
+| `germany-paulinzella.jpg` | Mittelalter · Klosterruine | CC BY-SA 4.0 · Ansgar Koreng |
+| `london-st-mary-abchurch.jpg` | Frühe Neuzeit · London | CC BY-SA 3.0 · Diliff |
+| `dublin-newman-church.jpg` | Industriezeit · Dublin | CC BY-SA 3.0 · Diliff |
+| `vintage-san-diego-2007.jpg` | Vintage-Foto · San Diego 2007 | CC BY-SA 4.0 · Troy Sankey |
+| `vintage-dortmund-2009.jpg` | Vintage-Foto · Dortmund 2009 | CC BY-SA 4.0 · DerMische |
+
+Also: medieval cathedrals (Laon, Soissons, Dublin Christ Church), Victorian churches (Brompton, St Barnabas), and more — see Panorama Library → **Vergangenheit**.
+
+Scaled via Wikimedia `thumburl` (~500–750 KB each).
+
 ## Panoramax crowdsourced (July 2026)
 
 Street-level imagery from [Panoramax](https://panoramax.xyz/) (CC BY-SA 4.0). Marked **new** + **panoramax** in the library.
