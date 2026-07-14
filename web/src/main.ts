@@ -3388,10 +3388,12 @@ function submitCoopGuess(): void {
   const pin: CoopPin = {
     lat: state.guess.lat,
     lng: state.guess.lng,
-    year: state.guess.year,
     label: state.coopMyRole === 'host' ? room.hostName : room.guestName,
     at: Date.now(),
   };
+  if (state.guess.year != null && Number.isFinite(state.guess.year)) {
+    pin.year = state.guess.year;
+  }
   submitCoopPin(state.coopRoomId, state.coopMyRole, pin);
   routeCoopScreen();
 }

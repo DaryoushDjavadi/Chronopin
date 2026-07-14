@@ -9,7 +9,7 @@ import {
   where,
   type Unsubscribe,
 } from 'firebase/firestore';
-import type { CoopInvite, CoopRoom } from '../data/coop';
+import type { CoopInvite, CoopRoom, CoopPin } from '../data/coop';
 import { applyRemoteCoopRoom, applyRemoteCoopInvite } from '../data/coop';
 import { getFirebaseDb, isFirebaseConfigured } from './firebase';
 
@@ -21,8 +21,29 @@ function inviteRef(inviteId: string) {
   return doc(getFirebaseDb(), 'coopInvites', inviteId);
 }
 
+function sanitizeCoopPin(pin: CoopPin): CoopPin {
+  const clean: CoopPin = {
+    lat: pin.lat,
+    lng: pin.lng,
+    label: pin.label,
+    at: pin.at,
+  };
+  if (pin.year != null && Number.isFinite(pin.year)) clean.year = pin.year;
+  return clean;
+}
+
+function sanitizeCoopPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const clean = { ...payload };
+  for (const key of ['hostPin', 'guestPin', 'finalPin'] as const) {
+    if (clean[key] && typeof clean[key] === 'object') {
+      clean[key] = sanitizeCoopPin(clean[key] as CoopPin);
+    }
+  }
+  return clean;
+}
+
 function coopRoomFirestorePayload(room: CoopRoom): Record<string, unknown> {
-  const payload: Record<string, unknown> = { ...room, syncedAt: Date.now() };
+  const payload: Record<string, unknown> = sanitizeCoopPayload({ ...room, syncedAt: Date.now() });
   // Never push null pins/votes — merge would wipe the partner's data in Firestore.
   for (const key of ['hostPin', 'guestPin', 'hostVote', 'guestVote', 'finalPin'] as const) {
     if (payload[key] == null) delete payload[key];
@@ -41,7 +62,7 @@ export async function patchCoopRoomInFirestore(
   patch: Partial<Pick<CoopRoom, 'hostPin' | 'guestPin' | 'hostVote' | 'guestVote' | 'finalPin' | 'phase'>>,
 ): Promise<void> {
   if (!isFirebaseConfigured()) return;
-  const payload: Record<string, unknown> = { ...patch, updatedAt: Date.now(), syncedAt: Date.now() };
+  const payload = sanitizeCoopPayload({ ...patch, updatedAt: Date.now(), syncedAt: Date.now() });
   for (const key of ['hostPin', 'guestPin', 'hostVote', 'guestVote', 'finalPin'] as const) {
     if (payload[key] == null) delete payload[key];
   }

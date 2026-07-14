@@ -41,7 +41,8 @@ Guess **where** you are. In time modes, also guess **when**.
 - Ablauf: Invite → Accept → blind pin → Reveal → Team-Vote → Ergebnis
 - **Firestore-Sync** (`coopRooms`, `coopInvites`) · Host-Banner **Start game** auf Home
 - **Match-Chat** während der Runde (Pop-up-Toasts + Chat-Panel, Firestore messages) — Live-Sync zwischen beiden Spielern
-- Co-op **Reveal/Vote** wechselt automatisch wenn beide Pins gesetzt sind (kein Hängenbleiben auf „Waiting…“)
+- Co-op **Reveal/Vote** wechselt automatisch wenn beide Pins gesetzt sind (Patch-Sync, kein Überschreiben des Partner-Pins)
+- **Spiele löschen** — Games-Tab (✕) oder „Delete game“ im Wartebildschirm
 - Verlassen beendet Match nicht für Partner
 - **Global Scoreboard** (Firestore sync, ein Eintrag pro Spieler/Modus)
 - **Animierte Avatare** an Map-Pins (Co-op & Solo)
@@ -49,6 +50,7 @@ Guess **where** you are. In time modes, also guess **when**.
 **Deploy**
 - **Strato**-Build (`npm run build:strato`, Base `/Chrono/`) — Live: **https://media-acht.de/Chrono/** — [`docs/STRATO_DEPLOY.md`](./docs/STRATO_DEPLOY.md)
 - Firebase Hosting + Firestore Rules/Indexes im Repo
+- **E2E-Test** Multiplayer: `cd web && node scripts/coop-multiplayer-e2e.mjs` (zwei Browser-Kontexte, Playwright)
 
 ### Bekannte Lücken (nach v1)
 
@@ -62,6 +64,8 @@ Guess **where** you are. In time modes, also guess **when**.
 - Login hängt nicht mehr · Sofort-Login + Hintergrund-Sync · Freundes-Suche ohne Fokus-Verlust · Admin-Panel
 - Name-Reclaim auf neuem Gerät · Scoreboard Cloud-Sync
 - Co-op Quit killt Partner-Match nicht mehr · Host Start-Banner
+- **Co-op Wartebildschirm:** Pin-Sync zu Firestore schlug fehl wenn `year` undefined (Classic) — behoben; beide Spieler springen zu Reveal
+- **Co-op Spiele löschen** (Games-Tab + Wartebildschirm)
 - Demo-/Prototype-Texte aus UI entfernt · Daily nutzt 3 Herzen
 - Firestore composite indexes (`firestore.indexes.json`)
 

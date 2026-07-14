@@ -53,6 +53,8 @@ Home → **Multiplayer** → pick a friend → **Co-op Decide**
 
 **Flow:** invite → accept → explore → hidden pin → reveal → team vote → result
 
+**Delete game:** Friends → **Games** tab (✕ on active session) or **Delete game** on the co-op wait screen.
+
 **With Firebase (2 devices):**
 
 1. Both open the same URL and log in with different names
@@ -64,6 +66,19 @@ Home → **Multiplayer** → pick a friend → **Co-op Decide**
 
 **1v1 Duel** and **Battle Royale** are UI previews only (coming soon).
 
+### Multiplayer E2E test (Playwright)
+
+Automated smoke test with **two browser contexts** (simulates two players):
+
+```bash
+cd web
+npm install
+node scripts/coop-multiplayer-e2e.mjs                    # live: media-acht.de/Chrono/
+node scripts/coop-multiplayer-e2e.mjs http://127.0.0.1:4173/Chrono/   # after npm run preview
+```
+
+Covers: login → friend request → co-op invite → both pin → reveal screen on both sides.
+
 ## Social & Friends
 
 | Feature | Status |
@@ -74,6 +89,7 @@ Home → **Multiplayer** → pick a friend → **Co-op Decide**
 | Friend list + profile stats | ✅ |
 | Chat per friend (local) | ✅ |
 | Match chat during Co-op (Firestore sync) | ✅ |
+| Delete active co-op game (Games tab / wait screen) | ✅ |
 | Cloud DM sync | 🔜 |
 
 Demo offline users (Max, Lena, Kai, Sam, Yuki) still work without Firebase.
@@ -151,6 +167,9 @@ src/
 ├── lib/match-chat-ui.ts    # Match chat overlay & toasts
 ├── lib/firebase-*.ts       # Auth, profile, friends, coop sync
 └── lib/app-reset.ts        # Factory reset (Player info)
+
+scripts/
+└── coop-multiplayer-e2e.mjs   # Playwright 2-player co-op smoke test
 ```
 
 Full architecture: [`../docs/WEB_PROTOTYPE.md`](../docs/WEB_PROTOTYPE.md)
