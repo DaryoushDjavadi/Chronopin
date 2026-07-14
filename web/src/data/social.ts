@@ -3,6 +3,7 @@ import { safeStorageSet } from '../lib/storage';
 import { getProfile } from '../lib/profile';
 import { isFirebaseConfigured } from '../lib/firebase';
 import type { CoopInvite } from './coop';
+import { getCoopGamesAttentionCount } from './coop';
 import {
   directoryUserToFriend,
   getDirectoryUser,
@@ -249,12 +250,15 @@ export function getPendingRequests(): FriendRequest[] {
 }
 
 export function getPendingRequestCount(): number {
-  return getPendingRequests().filter((r) => r.direction === 'incoming').length
-    + (isFirebaseConfigured() ? cloudIncomingCoopInvites.length : 0);
+  return getPendingRequests().filter((r) => r.direction === 'incoming').length;
 }
 
-export function getSocialBadgeCount(): number {
-  return getPendingRequestCount();
+export function getSocialBadgeCount(myPlayerId: string): number {
+  return (
+    getPendingRequestCount() +
+    getCloudIncomingCoopInvites().length +
+    getCoopGamesAttentionCount(myPlayerId)
+  );
 }
 
 export function searchUsers(query: string): DirectoryUser[] {

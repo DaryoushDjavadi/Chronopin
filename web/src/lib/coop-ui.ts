@@ -1,5 +1,11 @@
-import type { CoopRoom, CoopSyncMode, CoopVoteChoice } from '../data/coop';
-import { coopPhaseLabel, syncModeLabel } from '../data/coop';
+import type { CoopInvite, CoopRoom, CoopSyncMode, CoopVoteChoice } from '../data/coop';
+import {
+  coopPhaseLabel,
+  describeCoopSession,
+  getMyActiveCoopRooms,
+  getPendingCoopInvitesFromMe,
+  syncModeLabel,
+} from '../data/coop';
 import type { FriendProfile } from '../data/social';
 import { renderAvatar } from '../data/avatars';
 import type { GameMode } from '../types';
@@ -290,4 +296,81 @@ export function renderCoopInvitePanel(
         Send Co-op invite
       </button>
     </section>`;
+}
+
+export function renderCoopGamesTab(
+  myPlayerId: string,
+  cloudIncomingInvites: CoopInvite[],
+): string {
+  const activeRooms = getMyActiveCoopRooms(myPlayerId);
+  const outgoingPending = getPendingCoopInvitesFromMe(myPlayerId);
+
+  const roomRows = activeRooms
+    .map((room) => {
+      const info = describeCoopSession(room, myPlayerId);
+      const attention = info.needsAttention ? ' needs-attention' : '';
+      return `
+        <div class="coop-game-card${attention}">
+          <div class="coop-game-meta">
+            <strong>vs ${escapeHtml(info.partnerName)}</strong>
+            <span>${syncModeLabel(room.syncMode)} · ${modeLabel(room.gameMode)}</span>
+            <span class="coop-game-scene">${escapeHtml(room.roundTitle)}</span>
+            <span class="coop-game-phase">${escapeHtml(info.phaseLabel)}</span>
+          </div>
+          <button
+            type="button"
+            class="btn ${info.needsAttention ? 'btn-primary' : 'btn-secondary'} btn-sm"
+            data-action="enter-coop-room"
+            data-room="${room.id}"
+          >${escapeHtml(info.enterLabel)}</button>
+        </div>`;
+    })
+    .join('');
+
+  const incomingRows = cloudIncomingInvites
+    .map(
+      (inv) => `
+        <div class="coop-game-card needs-attention">
+          <div class="coop-game-meta">
+            <strong>Invite from ${escapeHtml(inv.fromName)}</strong>
+            <span>${syncModeLabel(inv.syncMode)} · ${modeLabel(inv.gameMode)}</span>
+            <span class="coop-game-phase">Pending — accept to play</span>
+          </div>
+          <div class="coop-game-actions">
+            <button type="button" class="btn btn-primary btn-sm" data-action="accept-coop-invite" data-invite="${inv.id}">Accept</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="decline-coop-invite" data-invite="${inv.id}">Decline</button>
+          </div>
+        </div>`,
+    )
+    .join('');
+
+  const outgoingRows = outgoingPending
+    .map(
+      (inv) => `
+        <div class="coop-game-card">
+          <div class="coop-game-meta">
+            <strong>Waiting for friend</strong>
+            <span>${syncModeLabel(inv.syncMode)} · ${modeLabel(inv.gameMode)}</span>
+            <span class="coop-game-phase">Invite sent — waiting for accept</span>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="cancel-coop-invite" data-invite="${inv.id}">Cancel</button>
+        </div>`,
+    )
+    .join('');
+
+  const hasContent = roomRows || incomingRows || outgoingRows;
+
+  return `
+    <div class="coop-games-tab">
+      <p class="coop-games-intro">Active Co-op games and invites. Async games stay here until you finish the round.</p>
+      ${
+        !hasContent
+          ? `<div class="social-empty"><p>No active games. Pick a friend under Multiplayer or Friends to start Co-op Decide.</p></div>`
+          : `<div class="coop-games-list">
+              ${incomingRows}
+              ${roomRows}
+              ${outgoingRows}
+            </div>`
+      }
+    </div>`;
 }

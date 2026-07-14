@@ -4566,3 +4566,69 @@ button {
 .btn-danger:hover {
   background: rgba(220, 60, 60, 0.28);
 }
+
+/* ── Co-op games tab (Friends overlay) ── */
+.coop-games-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.coop-games-intro {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.coop-games-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.coop-game-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.coop-game-card.needs-attention {
+  border-color: rgba(56, 189, 189, 0.45);
+  background: rgba(56, 189, 189, 0.06);
+}
+
+.coop-game-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.coop-game-meta strong {
+  font-size: 0.92rem;
+}
+
+.coop-game-meta span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.coop-game-scene {
+  color: var(--text) !important;
+}
+
+.coop-game-phase {
+  color: var(--teal) !important;
+}
+
+.coop-game-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}

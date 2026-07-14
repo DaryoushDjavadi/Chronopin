@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   setDoc,
@@ -126,4 +127,76 @@ export function subscribeIncomingCoopInvites(
     unsubUid();
     unsubName();
   };
+}
+
+export async function pullMyCoopRoomsFromFirestore(uid: string): Promise<void> {
+  if (!isFirebaseConfigured()) return;
+  const db = getFirebaseDb();
+  const [hostSnap, guestSnap] = await Promise.all([
+    getDocs(query(collection(db, 'coopRooms'), where('hostPlayerId', '==', uid))),
+    getDocs(query(collection(db, 'coopRooms'), where('guestUid', '==', uid))),
+  ]);
+  const seen = new Set<string>();
+  for (const snap of [hostSnap, guestSnap]) {
+    snap.docs.forEach((d) => {
+      if (seen.has(d.id)) return;
+      seen.add(d.id);
+      const remote = { ...(d.data() as CoopRoom), id: d.id };
+      if (remote.phase !== 'done') applyRemoteCoopRoom(remote);
+    });
+  }
+}
+
+export function subscribeMyCoopRooms(
+  uid: string,
+  onUpdate: () => void,
+): Unsubscribe | null {
+  if (!isFirebaseConfigured()) return null;
+  const db = getFirebaseDb();
+  const byId = new Map<string, CoopRoom>();
+
+  const emit = () => {
+    byId.forEach((room) => {
+      if (room.phase !== 'done') applyRemoteCoopRoom(room);
+    });
+    onUpdate();
+  };
+
+  const applySnap = (snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => {
+    snap.docs.forEach((d) => {
+      const room = { ...(d.data() as unknown as CoopRoom), id: d.id };
+      if (room.phase === 'done') byId.delete(d.id);
+      else byId.set(d.id, room);
+    });
+    emit();
+  };
+
+  const unsubHost = onSnapshot(
+    query(collection(db, 'coopRooms'), where('hostPlayerId', '==', uid)),
+    applySnap,
+    (err) => console.warn('[ChronoPin] my coop rooms (host):', err),
+  );
+
+  const unsubGuest = onSnapshot(
+    query(collection(db, 'coopRooms'), where('guestUid', '==', uid)),
+    applySnap,
+    (err) => console.warn('[ChronoPin] my coop rooms (guest):', err),
+  );
+
+  return () => {
+    unsubHost();
+    unsubGuest();
+  };
+}
+
+let myCoopRoomsUnsub: Unsubscribe | null = null;
+
+export function startMyCoopRoomsListener(uid: string, onUpdate: () => void): void {
+  myCoopRoomsUnsub?.();
+  myCoopRoomsUnsub = subscribeMyCoopRooms(uid, onUpdate);
+}
+
+export function stopMyCoopRoomsListener(): void {
+  myCoopRoomsUnsub?.();
+  myCoopRoomsUnsub = null;
 }

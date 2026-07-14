@@ -113,7 +113,7 @@ export interface AppState {
   avatarEditorOpenCategory: AvatarCategory | null;
   inventoryOpen: boolean;
   socialOpen: boolean;
-  socialTab: 'friends' | 'add';
+  socialTab: 'friends' | 'games' | 'add';
   socialView: 'list' | 'friend';
   socialSelectedFriendId: string | null;
   socialMessageDraft: string;

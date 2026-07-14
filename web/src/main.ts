@@ -28,7 +28,7 @@ import {
   declineFriendRequest,
   getFriendById,
   getFriends,
-  getPendingRequestCount,
+  getSocialBadgeCount,
   isFriendOnline,
   sendFriendRequestByName,
   sendFriendRequestToUser,
@@ -47,13 +47,14 @@ import {
   finishCoopRoom,
   getCoopRoom,
   getCoopRound,
-  getHostReadyCoopRooms,
   getMyCoopRole,
+  setActiveCoopRoomId,
+  getMyActiveCoopRooms,
+  describeCoopSession,
   leaveCoopRunLocally,
   simulatePartnerPin,
   simulatePartnerVote,
   startCoopRoom,
-  setActiveCoopRoomId,
   submitCoopPin,
   submitCoopVote,
   type CoopPin,
@@ -129,7 +130,12 @@ import {
   syncLocalProfileWithFirebase,
   applyCloudPlayerBonuses,
 } from './lib/firebase-profile';
-import { subscribeCoopRoom, pullCoopRoomFromFirestore, pullCoopInviteFromFirestore } from './lib/firebase-coop';
+import {
+  pullCoopRoomFromFirestore,
+  pullCoopInviteFromFirestore,
+  pullMyCoopRoomsFromFirestore,
+  startMyCoopRoomsListener,
+} from './lib/firebase-coop';
 import { assetUrl } from './lib/asset-url';
 import {
   syncSocialFromCloud,
@@ -250,7 +256,6 @@ let socialOnlineTimer: ReturnType<typeof setInterval> | null = null;
 let dailyCountdownTimer: ReturnType<typeof setInterval> | null = null;
 let libraryMarkers: maplibregl.Marker[] = [];
 let libraryMapInitToken = 0;
-let coopRoomUnsub: (() => void) | null = null;
 let matchChatUnsub: (() => void) | null = null;
 let namePromptBound = false;
 let socialSearchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -327,10 +332,14 @@ function renderHome(): string {
   const profile = getProfile();
   const avatarConfig = profile?.avatarConfig ?? state.avatarConfig;
   const displayName = profile?.name ?? 'Player';
-  const pendingSocial = getPendingRequestCount();
+  const pendingSocial = getSocialBadgeCount(getPlayerId());
   const soloActive = state.playType === 'solo';
   const incomingCoop = getCloudIncomingCoopInvites();
-  const hostReadyCoop = getHostReadyCoopRooms(getPlayerId());
+  const myActiveCoop = getMyActiveCoopRooms(getPlayerId());
+  const hostJoinCoop = myActiveCoop.filter((r) => {
+    const info = describeCoopSession(r, getPlayerId());
+    return info.myRole === 'host' && info.needsAttention;
+  });
   const mpFriends = getFriends();
   const mpFriendReady =
     mpFriends.length > 0 &&
@@ -340,7 +349,7 @@ function renderHome(): string {
   return `
     <div class="screen screen-home">
       ${
-        incomingCoop.length > 0 || hostReadyCoop.length > 0
+        incomingCoop.length > 0 || hostJoinCoop.length > 0 || myActiveCoop.length > 0
           ? `<div class="home-coop-banner">
               ${incomingCoop
                 .map(
@@ -354,17 +363,27 @@ function renderHome(): string {
                 </div>`,
                 )
                 .join('')}
-              ${hostReadyCoop
+              ${hostJoinCoop
                 .map(
                   (room) => `
                 <div class="home-coop-invite home-coop-ready">
-                  <span><strong>${escapeHtml(room.guestName)}</strong> accepted your Co-op invite · ${escapeHtml(room.roundTitle)}</span>
+                  <span><strong>${escapeHtml(room.guestName)}</strong> accepted · ${escapeHtml(room.roundTitle)}</span>
                   <div class="home-coop-invite-actions">
-                    <button type="button" class="btn btn-primary btn-sm" data-action="start-coop-room" data-room="${room.id}">Start game</button>
+                    <button type="button" class="btn btn-primary btn-sm" data-action="enter-coop-room" data-room="${room.id}">Join game</button>
                   </div>
                 </div>`,
                 )
                 .join('')}
+              ${
+                myActiveCoop.length > 0
+                  ? `<div class="home-coop-invite">
+                      <span>${myActiveCoop.length} active Co-op game${myActiveCoop.length === 1 ? '' : 's'}</span>
+                      <div class="home-coop-invite-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" data-action="open-coop-games">Open games</button>
+                      </div>
+                    </div>`
+                  : ''
+              }
             </div>`
           : ''
       }
@@ -718,7 +737,7 @@ async function completeNameSetup(
         if (uid) await applyCloudPlayerBonuses(uid);
         await syncSocialFromCloud();
         await syncScoreboardFromCloud();
-        startCloudCoopInviteListener(() => {
+        startCloudCoopSync(() => {
           if (state.screen === 'home') render();
           else if (state.socialOpen) patchHomeOverlays();
         });
@@ -1190,7 +1209,7 @@ function patchHomeOverlays(): void {
   if (adminHtml) screen.insertAdjacentHTML('beforeend', adminHtml);
 
   const badge = screen.querySelector('.social-btn-badge');
-  const pending = getPendingRequestCount();
+  const pending = getSocialBadgeCount(getPlayerId());
   const btn = screen.querySelector('[data-action="social"]');
   if (btn) {
     if (pending > 0) {
@@ -1484,7 +1503,7 @@ function bindSocialEventsOnce(): void {
 
     const tabBtn = target.closest<HTMLElement>('[data-social-tab]');
     if (tabBtn && state.socialOpen) {
-      state.socialTab = tabBtn.dataset.socialTab as 'friends' | 'add';
+      state.socialTab = tabBtn.dataset.socialTab as 'friends' | 'games' | 'add';
       state.socialView = 'list';
       state.socialSelectedFriendId = null;
       patchHomeOverlays();
@@ -1714,13 +1733,25 @@ function bindSocialEventsOnce(): void {
       return;
     }
 
+    const enterCoopBtn = target.closest<HTMLElement>('[data-action="enter-coop-room"]');
+    if (enterCoopBtn) {
+      const roomId = enterCoopBtn.dataset.room;
+      if (roomId) void enterCoopRoom(roomId);
+      return;
+    }
+
+    if (target.closest('[data-action="open-coop-games"]')) {
+      state.socialOpen = true;
+      state.socialTab = 'games';
+      state.socialView = 'list';
+      patchHomeOverlays();
+      return;
+    }
+
     const startCoopBtn = target.closest<HTMLElement>('[data-action="start-coop-room"]');
     if (startCoopBtn) {
       const roomId = startCoopBtn.dataset.room;
-      if (roomId) {
-        setSocialOpen(false);
-        startCoopGame(roomId);
-      }
+      if (roomId) void enterCoopRoom(roomId);
       return;
     }
 
@@ -3134,18 +3165,87 @@ function routeCoopScreen(): void {
 }
 
 function stopCoopFirestoreListener(): void {
-  coopRoomUnsub?.();
-  coopRoomUnsub = null;
+  /* global my-coop-rooms listener handles sync */
 }
 
-function startCoopFirestoreListener(roomId: string): void {
-  stopCoopFirestoreListener();
-  const unsub = subscribeCoopRoom(roomId, () => {
-    if (state.isCoopRun && state.coopRoomId === roomId) routeCoopScreen();
-    else if (state.screen === 'home') render();
-    else if (state.socialOpen) patchHomeOverlays();
+function startCloudCoopSync(onChange?: () => void): void {
+  startCloudCoopInviteListener(onChange);
+  void waitForFirebaseUid().then(async (uid) => {
+    if (!uid) return;
+    await pullMyCoopRoomsFromFirestore(uid);
+    startMyCoopRoomsListener(uid, () => {
+      if (state.isCoopRun && state.coopRoomId) routeCoopScreen();
+      else onChange?.();
+    });
   });
-  if (unsub) coopRoomUnsub = unsub;
+}
+
+async function enterCoopRoom(roomId: string): Promise<void> {
+  const remote = await pullCoopRoomFromFirestore(roomId);
+  if (remote) applyRemoteCoopRoom(remote);
+
+  let room = getCoopRoom(roomId);
+  if (!room) {
+    showSocialToast('Game not found.');
+    return;
+  }
+
+  if (room.phase === 'done') {
+    showSocialToast('This game is already finished.');
+    return;
+  }
+
+  const myUid = getPlayerId();
+  const myRole = getMyCoopRole(room, myUid);
+
+  if (myRole === 'host' && !room.guestAccepted) {
+    showSocialToast(`Waiting for ${room.guestName} to accept…`);
+    if (state.socialOpen) patchHomeOverlays();
+    return;
+  }
+
+  const inProgress = ['explore', 'host_pinned', 'guest_pinned', 'reveal', 'vote', 'result'].includes(
+    room.phase,
+  );
+  const started = startCoopRoom(roomId);
+  room = getCoopRoom(roomId)!;
+
+  if (!started && !inProgress) {
+    showSocialToast('Cannot join this game yet.');
+    return;
+  }
+
+  if (!started && inProgress) setActiveCoopRoomId(roomId);
+
+  const round = getCoopRound(room);
+  if (!round) {
+    showSocialToast('Scene not found for this game.');
+    return;
+  }
+
+  closeHomeOverlays();
+  destroyPanorama();
+  destroyMap();
+  state.isCoopRun = true;
+  state.coopRoomId = roomId;
+  state.coopMyRole = myRole;
+  state.playType = 'multiplayer';
+  state.mode = room.gameMode;
+  state.round = round;
+  state.guess = null;
+  state.session = {
+    hearts: MAX_HEARTS,
+    score: 0,
+    roundNumber: 1,
+    usedRoundIds: [round.id],
+    lastLostHeart: false,
+    lastRoundPoints: 0,
+    usedItemsThisRound: [],
+    activeHint: null,
+  };
+  markPanoramaSeen(round.panoramaId);
+  startMatchChatListener(roomId);
+  routeCoopScreen();
 }
 
 async function acceptAndJoinCoopInvite(inviteId: string): Promise<void> {
@@ -3163,7 +3263,7 @@ async function acceptAndJoinCoopInvite(inviteId: string): Promise<void> {
 
   acceptCoopInvite(inviteId);
   setSocialOpen(false);
-  joinCoopAsGuest(invite.roomId);
+  await enterCoopRoom(invite.roomId);
   void syncSocialFromCloud();
   showSocialToast('Joined Co-op — good luck!');
 }
@@ -3175,72 +3275,6 @@ function loadCoopInvitesLocal(): import('./data/coop').CoopInvite[] {
   } catch {
     return [];
   }
-}
-
-function joinCoopAsGuest(roomId: string): void {
-  const room = getCoopRoom(roomId);
-  if (!room) return;
-  const round = getCoopRound(room);
-  if (!round) return;
-
-  closeHomeOverlays();
-  setActiveCoopRoomId(roomId);
-  destroyPanorama();
-  destroyMap();
-  state.isCoopRun = true;
-  state.coopRoomId = roomId;
-  state.coopMyRole = 'guest';
-  state.playType = 'multiplayer';
-  state.mode = room.gameMode;
-  state.round = round;
-  state.guess = null;
-  state.session = {
-    hearts: MAX_HEARTS,
-    score: 0,
-    roundNumber: 1,
-    usedRoundIds: [round.id],
-    lastLostHeart: false,
-    lastRoundPoints: 0,
-    usedItemsThisRound: [],
-    activeHint: null,
-  };
-  markPanoramaSeen(round.panoramaId);
-  startCoopFirestoreListener(roomId);
-  startMatchChatListener(roomId);
-  routeCoopScreen();
-}
-
-function startCoopGame(roomId: string): void {
-  const room = getCoopRoom(roomId);
-  if (!room) return;
-  const round = getCoopRound(room);
-  if (!round) return;
-
-  closeHomeOverlays();
-  startCoopRoom(roomId);
-  destroyPanorama();
-  destroyMap();
-  state.isCoopRun = true;
-  state.coopRoomId = roomId;
-  state.coopMyRole = 'host';
-  state.playType = 'multiplayer';
-  state.mode = room.gameMode;
-  state.round = round;
-  state.guess = null;
-  state.session = {
-    hearts: MAX_HEARTS,
-    score: 0,
-    roundNumber: 1,
-    usedRoundIds: [round.id],
-    lastLostHeart: false,
-    lastRoundPoints: 0,
-    usedItemsThisRound: [],
-    activeHint: null,
-  };
-  markPanoramaSeen(round.panoramaId);
-  startCoopFirestoreListener(roomId);
-  startMatchChatListener(roomId);
-  routeCoopScreen();
 }
 
 function submitCoopGuess(): void {
@@ -3281,10 +3315,9 @@ function sendCoopInviteFromSetup(): void {
 
   setCoopSetupOpen(false);
   state.socialOpen = true;
-  state.socialTab = 'friends';
-  state.socialView = 'friend';
+  state.socialTab = 'games';
+  state.socialView = 'list';
   state.socialSelectedFriendId = friend.id;
-  startCoopFirestoreListener(invite.roomId);
   showSocialToast(`Invite sent to ${friend.name}!`);
   patchHomeOverlays();
 }
@@ -3688,7 +3721,7 @@ async function bootstrap(): Promise<void> {
         });
         await syncSocialFromCloud();
         await syncScoreboardFromCloud();
-        startCloudCoopInviteListener(() => {
+        startCloudCoopSync(() => {
           if (state.screen === 'home') render();
           else if (state.socialOpen) patchHomeOverlays();
         });

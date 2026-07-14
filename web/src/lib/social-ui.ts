@@ -1,7 +1,7 @@
 import { renderAvatar } from '../data/avatars';
 import type { AvatarConfig } from '../data/lpc-catalog';
 import type { CoopSyncMode } from '../data/coop';
-import { getCoopInvitesWithFriend, getReadyCoopRoomWithFriend } from '../data/coop';
+import { getCoopInvitesWithFriend, getMyActiveCoopRooms, describeCoopSession } from '../data/coop';
 import type { GameMode } from '../types';
 import {
   type FriendProfile,
@@ -15,9 +15,11 @@ import {
   isFriendOnline,
   searchUsers,
 } from '../data/social';
-import { renderCoopInvitePanel } from './coop-ui';
+import { renderCoopInvitePanel, renderCoopGamesTab } from './coop-ui';
+import { getCoopGamesAttentionCount } from '../data/coop';
+import { getCloudIncomingCoopInvites } from '../data/social';
 
-export type SocialTab = 'friends' | 'add';
+export type SocialTab = 'friends' | 'games' | 'add';
 export type SocialView = 'list' | 'friend';
 
 function escapeHtml(text: string): string {
@@ -189,7 +191,12 @@ function renderAddTab(addNameDraft: string, cloudResults: { uid: string; name: s
 }
 
 function renderFriendCoopSection(friendId: string, myPlayerId: string): string {
-  const readyRoom = getReadyCoopRoomWithFriend(friendId, myPlayerId);
+  const activeWithFriend = getMyActiveCoopRooms(myPlayerId).find(
+    (r) =>
+      r.guestFriendId === friendId ||
+      r.guestUid === friendId ||
+      r.hostPlayerId === friendId,
+  );
   const rawInvites = getCoopInvitesWithFriend(friendId, myPlayerId);
   const invites = rawInvites.map((inv) => ({
     id: inv.id,
@@ -199,13 +206,14 @@ function renderFriendCoopSection(friendId: string, myPlayerId: string): string {
     direction: inv.fromPlayerId === myPlayerId ? ('outgoing' as const) : ('incoming' as const),
   }));
 
-  if (readyRoom) {
+  if (activeWithFriend) {
+    const info = describeCoopSession(activeWithFriend, myPlayerId);
     return `
       <section class="social-coop-section">
-        <h4>Co-op ready</h4>
-        <p class="social-coop-desc">${escapeHtml(readyRoom.guestName)} accepted · ${escapeHtml(readyRoom.roundTitle)}</p>
-        <button type="button" class="btn btn-primary coop-invite-btn" data-action="start-coop-room" data-room="${readyRoom.id}">
-          Start Co-op game
+        <h4>Active Co-op</h4>
+        <p class="social-coop-desc">${escapeHtml(info.phaseLabel)} · ${escapeHtml(activeWithFriend.roundTitle)}</p>
+        <button type="button" class="btn btn-primary coop-invite-btn" data-action="enter-coop-room" data-room="${activeWithFriend.id}">
+          ${escapeHtml(info.enterLabel)}
         </button>
       </section>`;
   }
@@ -310,6 +318,8 @@ export function renderSocialOverlayHtml(options: {
   const { open, tab, view, selectedFriendId, messageDraft, addNameDraft, toast, myPlayerId, cloudSearchResults } =
     options;
   const pending = getPendingRequestCount();
+  const gamesAttention =
+    getCoopGamesAttentionCount(myPlayerId) + getCloudIncomingCoopInvites().length;
 
   const body =
     view === 'friend' && selectedFriendId
@@ -319,11 +329,20 @@ export function renderSocialOverlayHtml(options: {
           <button type="button" class="segmented-btn ${tab === 'friends' ? 'active' : ''}" data-social-tab="friends" role="tab" aria-selected="${tab === 'friends'}">
             Friends
           </button>
+          <button type="button" class="segmented-btn ${tab === 'games' ? 'active' : ''}" data-social-tab="games" role="tab" aria-selected="${tab === 'games'}">
+            Games${gamesAttention > 0 ? `<span class="social-tab-badge">${gamesAttention}</span>` : ''}
+          </button>
           <button type="button" class="segmented-btn ${tab === 'add' ? 'active' : ''}" data-social-tab="add" role="tab" aria-selected="${tab === 'add'}">
             Add / Requests${pending > 0 ? `<span class="social-tab-badge">${pending}</span>` : ''}
           </button>
         </div>
-        ${tab === 'friends' ? renderFriendsTab() : renderAddTab(addNameDraft, cloudSearchResults)}`;
+        ${
+          tab === 'friends'
+            ? renderFriendsTab()
+            : tab === 'games'
+              ? renderCoopGamesTab(myPlayerId, getCloudIncomingCoopInvites())
+              : renderAddTab(addNameDraft, cloudSearchResults)
+        }`;
 
   return `
     <div

@@ -234,9 +234,77 @@ export function getCoopInvitesWithFriend(friendId: string, myPlayerId: string): 
   return loadInvites().filter(
     (i) =>
       i.status === 'pending' &&
-      ((i.toFriendId === friendId && i.fromPlayerId === myPlayerId) ||
-        (i.fromPlayerId !== myPlayerId && i.toFriendId === friendId)),
+      ((i.fromPlayerId === myPlayerId && i.toFriendId === friendId) ||
+        (i.fromPlayerId === friendId && i.toFriendId === myPlayerId)),
   );
+}
+
+export function getMyActiveCoopRooms(myPlayerId: string): CoopRoom[] {
+  return loadRooms()
+    .filter((r) => r.phase !== 'done')
+    .filter(
+      (r) =>
+        r.hostPlayerId === myPlayerId ||
+        r.guestUid === myPlayerId ||
+        r.guestFriendId === myPlayerId,
+    )
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export interface CoopSessionInfo {
+  room: CoopRoom;
+  myRole: 'host' | 'guest';
+  partnerName: string;
+  phaseLabel: string;
+  canEnter: boolean;
+  enterLabel: string;
+  needsAttention: boolean;
+}
+
+export function describeCoopSession(room: CoopRoom, myPlayerId: string): CoopSessionInfo {
+  const myRole = getMyCoopRole(room, myPlayerId);
+  const partnerName = myRole === 'host' ? room.guestName : room.hostName;
+  const phaseLabel = coopPhaseLabel(room, myRole);
+  const myTurn = canISubmitPin(room, myRole);
+  const hostCanJoin =
+    myRole === 'host' &&
+    room.guestAccepted &&
+    (room.phase === 'invite_pending' || room.phase === 'explore' || room.phase === 'host_pinned');
+  const canEnter =
+    room.phase !== 'done' &&
+    !(myRole === 'host' && !room.guestAccepted && room.phase === 'invite_pending');
+
+  let enterLabel = 'Continue';
+  if (myTurn) enterLabel = 'Your turn';
+  else if (hostCanJoin && !room.hostPin) enterLabel = 'Join game';
+  else if (room.phase === 'result') enterLabel = 'View result';
+  else if (room.phase === 'reveal' || room.phase === 'vote') enterLabel = 'Open';
+  else if (!canEnter) enterLabel = 'Waiting';
+
+  const needsAttention = Boolean(
+    myTurn ||
+      (myRole === 'host' &&
+        room.guestAccepted &&
+        !room.hostPin &&
+        room.phase !== 'result') ||
+      (myRole === 'guest' && room.syncMode === 'async' && !!room.hostPin && !room.guestPin),
+  );
+
+  return {
+    room,
+    myRole,
+    partnerName,
+    phaseLabel,
+    canEnter,
+    enterLabel,
+    needsAttention,
+  };
+}
+
+export function getCoopGamesAttentionCount(myPlayerId: string): number {
+  return getMyActiveCoopRooms(myPlayerId).filter(
+    (r) => describeCoopSession(r, myPlayerId).needsAttention,
+  ).length;
 }
 
 export function getIncomingCoopInvitesForMe(myUid: string): CoopInvite[] {
