@@ -147,7 +147,7 @@ export function renderCoopWaitScreen(
 
   const waitHint = offlineDemo
     ? `Offline testing — simulate ${escapeHtml(partner)}'s turn on this device.`
-    : `Waiting for ${escapeHtml(partner)} — you'll advance automatically when they're ready.`;
+    : `Waiting for ${escapeHtml(partner)} — checking every few seconds…`;
 
   return `
     <div class="screen screen-coop-wait">
@@ -156,13 +156,14 @@ export function renderCoopWaitScreen(
         <h2>${escapeHtml(coopPhaseLabel(room, myRole))}</h2>
         <p class="coop-wait-sub">${escapeHtml(room.roundTitle)} · ${modeLabel(room.gameMode)}</p>
         <p class="coop-wait-hint">${waitHint}</p>
+        <button type="button" class="btn btn-secondary" data-action="coop-refresh">Check now</button>
         ${
           canSimulate
             ? `<button type="button" class="btn btn-secondary" data-action="coop-simulate-partner">Simulate partner turn</button>`
             : ''
         }
-        ${offlineDemo ? `<button type="button" class="btn btn-primary" data-action="coop-refresh">Refresh status</button>` : ''}
         <button type="button" class="btn btn-secondary" data-action="quit">Leave game</button>
+        <button type="button" class="btn btn-danger btn-sm coop-delete-btn" data-action="delete-coop-game" data-room="${room.id}">Delete game</button>
       </div>
     </div>`;
 }
@@ -317,12 +318,15 @@ export function renderCoopGamesTab(
             <span class="coop-game-scene">${escapeHtml(room.roundTitle)}</span>
             <span class="coop-game-phase">${escapeHtml(info.phaseLabel)}</span>
           </div>
-          <button
-            type="button"
-            class="btn ${info.needsAttention ? 'btn-primary' : 'btn-secondary'} btn-sm"
-            data-action="enter-coop-room"
-            data-room="${room.id}"
-          >${escapeHtml(info.enterLabel)}</button>
+          <div class="coop-game-actions">
+            <button
+              type="button"
+              class="btn ${info.needsAttention ? 'btn-primary' : 'btn-secondary'} btn-sm"
+              data-action="enter-coop-room"
+              data-room="${room.id}"
+            >${escapeHtml(info.enterLabel)}</button>
+            <button type="button" class="btn btn-danger btn-sm" data-action="delete-coop-game" data-room="${room.id}" title="Delete game">✕</button>
+          </div>
         </div>`;
     })
     .join('');

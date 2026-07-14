@@ -4631,4 +4631,9 @@ button {
   display: flex;
   flex-shrink: 0;
   gap: 6px;
+  align-items: center;
+}
+
+.coop-delete-btn {
+  margin-top: 8px;
 }

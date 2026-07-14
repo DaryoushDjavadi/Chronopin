@@ -3,7 +3,7 @@ import { pickDailyRound } from '../lib/daily';
 import { getRoundById, pickRound } from './rounds';
 import type { Round } from '../types';
 import { safeStorageSet } from '../lib/storage';
-import { pushCoopInviteToFirestore, pushCoopRoomToFirestore } from '../lib/firebase-coop';
+import { pushCoopInviteToFirestore, pushCoopRoomToFirestore, patchCoopRoomInFirestore } from '../lib/firebase-coop';
 import { isFirebaseConfigured } from '../lib/firebase';
 import { getDirectoryUser } from './user-directory';
 
@@ -149,6 +149,33 @@ export function mergeCoopRoomState(local: CoopRoom, remote: CoopRoom): CoopRoom 
   };
 }
 
+/** Recompute phase from pins/votes when Firestore phase is stale. */
+export function normalizeCoopRoomPhase(room: CoopRoom): CoopRoom {
+  let phase = room.phase;
+  if (room.hostPin && room.guestPin && phaseRank(phase) < phaseRank('reveal')) {
+    phase = 'reveal';
+  } else if (room.syncMode === 'async') {
+    if (room.hostPin && !room.guestPin && phaseRank(phase) < phaseRank('host_pinned')) {
+      phase = 'host_pinned';
+    }
+  }
+  if (room.hostVote && room.guestVote && phaseRank(phase) < phaseRank('result')) {
+    phase = 'result';
+  } else if (
+    (room.hostVote || room.guestVote) &&
+    phaseRank(phase) >= phaseRank('reveal') &&
+    phaseRank(phase) < phaseRank('vote')
+  ) {
+    phase = 'vote';
+  }
+  if (phase === room.phase) return room;
+  return { ...room, phase };
+}
+
+export function bothCoopPinsPlaced(room: CoopRoom): boolean {
+  return Boolean(room.hostPin && room.guestPin);
+}
+
 function persistCoopRoom(room: CoopRoom): void {
   const rooms = loadRooms();
   const idx = rooms.findIndex((r) => r.id === room.id);
@@ -183,6 +210,16 @@ export function getCoopRoom(id: string): CoopRoom | undefined {
   return loadRooms().find((r) => r.id === id);
 }
 
+export function getResolvedCoopRoom(id: string): CoopRoom | undefined {
+  const room = getCoopRoom(id);
+  if (!room) return undefined;
+  const normalized = normalizeCoopRoomPhase(room);
+  if (normalized.phase !== room.phase) {
+    persistCoopRoom(normalized);
+  }
+  return normalized;
+}
+
 export function getActiveCoopRoom(): CoopRoom | undefined {
   const id = getActiveCoopRoomId();
   return id ? getCoopRoom(id) : undefined;
@@ -190,7 +227,8 @@ export function getActiveCoopRoom(): CoopRoom | undefined {
 
 export function applyRemoteCoopRoom(room: CoopRoom): void {
   const existing = getCoopRoom(room.id);
-  persistCoopRoom(existing ? mergeCoopRoomState(existing, room) : room);
+  const merged = existing ? mergeCoopRoomState(existing, room) : room;
+  persistCoopRoom(normalizeCoopRoomPhase(merged));
 }
 
 export function applyRemoteCoopInvite(invite: CoopInvite): void {
@@ -452,8 +490,25 @@ export function submitCoopPin(
     room.phase = 'reveal';
   }
 
+  const normalized = normalizeCoopRoomPhase(room);
+  updateCoopRoom(normalized, { skipCloud: true });
+
+  const patch: Partial<CoopRoom> = { phase: normalized.phase };
+  if (role === 'host') patch.hostPin = pin;
+  else patch.guestPin = pin;
+  void patchCoopRoomInFirestore(roomId, patch).catch((err) =>
+    console.warn('[ChronoPin] Firestore coop pin sync failed:', err),
+  );
+
+  return normalized;
+}
+
+export function abandonCoopGame(roomId: string): void {
+  const room = getCoopRoom(roomId);
+  if (!room) return;
+  room.phase = 'done';
   updateCoopRoom(room);
-  return room;
+  if (getActiveCoopRoomId() === roomId) setActiveCoopRoomId(null);
 }
 
 export function simulatePartnerPin(

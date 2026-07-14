@@ -40,12 +40,15 @@ import {
   applyRemoteCoopRoom,
   applyRemoteCoopInvite,
   advanceCoopToVote,
+  abandonCoopGame,
+  bothCoopPinsPlaced,
   canISubmitPin,
   cancelCoopInvite,
   createCoopInvite,
   declineCoopInvite,
   finishCoopRoom,
   getCoopRoom,
+  getResolvedCoopRoom,
   getCoopRound,
   getMyCoopRole,
   setActiveCoopRoomId,
@@ -259,6 +262,7 @@ let libraryMarkers: maplibregl.Marker[] = [];
 let libraryMapInitToken = 0;
 let matchChatUnsub: (() => void) | null = null;
 let activeCoopRoomUnsub: (() => void) | null = null;
+let coopWaitPollTimer: ReturnType<typeof setInterval> | null = null;
 let namePromptBound = false;
 let socialSearchTimer: ReturnType<typeof setTimeout> | null = null;
 let adminSearchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1752,6 +1756,13 @@ function bindSocialEventsOnce(): void {
       return;
     }
 
+    const deleteCoopBtn = target.closest<HTMLElement>('[data-action="delete-coop-game"]');
+    if (deleteCoopBtn) {
+      const roomId = deleteCoopBtn.dataset.room;
+      if (roomId) void confirmDeleteCoopGame(roomId);
+      return;
+    }
+
     if (target.closest('[data-action="open-coop-games"]')) {
       state.socialOpen = true;
       state.socialTab = 'games';
@@ -2757,7 +2768,13 @@ function bindHomeEvents(): void {
 
 function bindCoopWaitEvents(): void {
   app.querySelector('[data-action="quit"]')?.addEventListener('click', goHome);
-  app.querySelector('[data-action="coop-refresh"]')?.addEventListener('click', routeCoopScreen);
+  app.querySelector('[data-action="coop-refresh"]')?.addEventListener('click', () => {
+    if (!state.coopRoomId) return;
+    void pullCoopRoomFromFirestore(state.coopRoomId).then((remote) => {
+      if (remote) applyRemoteCoopRoom(remote);
+      routeCoopScreen();
+    });
+  });
   app.querySelector('[data-action="coop-simulate-partner"]')?.addEventListener('click', () => {
     const room = state.coopRoomId ? getCoopRoom(state.coopRoomId) : null;
     if (!room || !state.round) return;
@@ -3147,19 +3164,49 @@ function renderCoopResultScreen(): string {
   );
 }
 
+function clearCoopWaitPoll(): void {
+  if (coopWaitPollTimer) {
+    clearInterval(coopWaitPollTimer);
+    coopWaitPollTimer = null;
+  }
+}
+
+function syncCoopWaitPoll(): void {
+  clearCoopWaitPoll();
+  if (!state.isCoopRun || !state.coopRoomId || state.screen !== 'coop-wait') return;
+
+  const poll = () => {
+    if (!state.isCoopRun || !state.coopRoomId) return;
+    void pullCoopRoomFromFirestore(state.coopRoomId).then((remote) => {
+      if (remote) applyRemoteCoopRoom(remote);
+      routeCoopScreen();
+    });
+  };
+
+  poll();
+  coopWaitPollTimer = setInterval(poll, 2500);
+}
+
 function routeCoopScreen(): void {
   const roomId = state.coopRoomId;
   if (!roomId) {
     goHome();
     return;
   }
-  const room = getCoopRoom(roomId);
+  const room = getResolvedCoopRoom(roomId);
   if (!room) {
     goHome();
     return;
   }
   const myRole = state.coopMyRole ?? getMyCoopRole(room, getPlayerId());
   state.coopMyRole = myRole;
+
+  if (bothCoopPinsPlaced(room) && room.phase !== 'vote' && room.phase !== 'result' && room.phase !== 'done') {
+    state.screen = 'coop-reveal';
+    clearCoopWaitPoll();
+    render();
+    return;
+  }
 
   switch (room.phase) {
     case 'explore':
@@ -3180,6 +3227,8 @@ function routeCoopScreen(): void {
       goHome();
       return;
   }
+  if (state.screen === 'coop-wait') syncCoopWaitPoll();
+  else clearCoopWaitPoll();
   render();
 }
 
@@ -3206,6 +3255,30 @@ function startCloudCoopSync(onChange?: () => void): void {
       else onChange?.();
     });
   });
+}
+
+async function confirmDeleteCoopGame(roomId: string): Promise<void> {
+  const room = getCoopRoom(roomId);
+  if (!room) return;
+  const myId = getPlayerId();
+  const partner = room.hostPlayerId === myId ? room.guestName : room.hostName;
+  const ok = await confirmDialog(
+    `Delete Co-op game vs ${partner}? This cannot be undone.`,
+    { title: 'Delete game', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true },
+  );
+  if (!ok) return;
+  abandonCoopGame(roomId);
+  if (state.isCoopRun && state.coopRoomId === roomId) {
+    state.isCoopRun = false;
+    state.coopRoomId = null;
+    state.coopMyRole = null;
+    goHome();
+  } else if (state.socialOpen) {
+    patchHomeOverlays();
+  } else if (state.screen === 'home') {
+    render();
+  }
+  showSocialToast('Game deleted.');
 }
 
 async function enterCoopRoom(roomId: string): Promise<void> {
@@ -3353,6 +3426,7 @@ function sendCoopInviteFromSetup(): void {
 
 function goHome(): void {
   stopCoopFirestoreListener();
+  clearCoopWaitPoll();
   stopMatchChatListener();
   if (state.coopRoomId && state.screen === 'coop-result') {
     finishCoopRoom(state.coopRoomId);

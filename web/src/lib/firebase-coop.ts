@@ -35,6 +35,19 @@ export async function pushCoopRoomToFirestore(room: CoopRoom): Promise<void> {
   await setDoc(roomRef(room.id), coopRoomFirestorePayload(room), { merge: true });
 }
 
+/** Patch-only sync — never wipes the partner's pin/vote on merge. */
+export async function patchCoopRoomInFirestore(
+  roomId: string,
+  patch: Partial<Pick<CoopRoom, 'hostPin' | 'guestPin' | 'hostVote' | 'guestVote' | 'finalPin' | 'phase'>>,
+): Promise<void> {
+  if (!isFirebaseConfigured()) return;
+  const payload: Record<string, unknown> = { ...patch, updatedAt: Date.now(), syncedAt: Date.now() };
+  for (const key of ['hostPin', 'guestPin', 'hostVote', 'guestVote', 'finalPin'] as const) {
+    if (payload[key] == null) delete payload[key];
+  }
+  await setDoc(roomRef(roomId), payload, { merge: true });
+}
+
 export async function pushCoopInviteToFirestore(invite: CoopInvite): Promise<void> {
   if (!isFirebaseConfigured()) return;
   const payload = {
