@@ -728,23 +728,33 @@ async function completeNameSetup(
   state.avatarConfig = normalizeAvatarConfig(result.profile.avatarConfig);
   render();
   if (result.authWarning) {
-    void alertDialog(result.authWarning, 'Online mode unavailable');
+    setTimeout(() => {
+      void alertDialog(result.authWarning!, 'Online mode unavailable');
+    }, 0);
   }
   if (isFirebaseConfigured() && !result.offline) {
-    void (async () => {
-      try {
-        const uid = await waitForFirebaseUid();
-        if (uid) await applyCloudPlayerBonuses(uid);
-        await syncSocialFromCloud();
-        await syncScoreboardFromCloud();
-        startCloudCoopSync(() => {
-          if (state.screen === 'home') render();
-          else if (state.socialOpen) patchHomeOverlays();
-        });
-      } catch (err) {
-        console.warn('[ChronoPin] Post-login cloud sync failed:', err);
-      }
-    })();
+    void startPostLoginCloudSync();
+  } else if (isFirebaseConfigured() && result.offline) {
+    void startPostLoginCloudSync(true);
+  }
+}
+
+async function startPostLoginCloudSync(backgroundOnly = false): Promise<void> {
+  try {
+    const uid = await Promise.race([
+      waitForFirebaseUid(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), backgroundOnly ? 4000 : 8000)),
+    ]);
+    if (!uid) return;
+    await applyCloudPlayerBonuses(uid).catch(() => undefined);
+    await syncSocialFromCloud().catch(() => undefined);
+    await syncScoreboardFromCloud().catch(() => undefined);
+    startCloudCoopSync(() => {
+      if (state.screen === 'home') render();
+      else if (state.socialOpen) patchHomeOverlays();
+    });
+  } catch (err) {
+    console.warn('[ChronoPin] Post-login cloud sync failed:', err);
   }
 }
 
@@ -2357,15 +2367,17 @@ function bindNamePromptEvents(): void {
         const result = await loginWithName(input.value);
         if (!result.ok) {
           if (errEl) errEl.textContent = result.error;
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Continue';
           return;
         }
         await completeNameSetup(result);
       } catch (err) {
         if (errEl) errEl.textContent = 'Something went wrong — try again.';
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Continue';
+        console.warn('[ChronoPin] Login failed:', err);
+      } finally {
+        if (!hasProfile()) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Continue';
+        }
       }
     })();
   });
@@ -3711,26 +3723,31 @@ bindSocialEventsOnce();
 bindDailyEventsOnce();
 
 async function bootstrap(): Promise<void> {
-  if (isFirebaseConfigured()) {
+  render();
+
+  if (!isFirebaseConfigured()) return;
+
+  void (async () => {
     try {
       await ensureFirebaseAuth();
-      if (hasProfile()) {
-        await syncLocalProfileWithFirebase(getProfile(), (merged) => {
-          persistProfile(merged);
-          state.avatarConfig = normalizeAvatarConfig(merged.avatarConfig);
-        });
-        await syncSocialFromCloud();
-        await syncScoreboardFromCloud();
-        startCloudCoopSync(() => {
-          if (state.screen === 'home') render();
-          else if (state.socialOpen) patchHomeOverlays();
-        });
-      }
+      if (!hasProfile()) return;
+
+      await syncLocalProfileWithFirebase(getProfile(), (merged) => {
+        persistProfile(merged);
+        state.avatarConfig = normalizeAvatarConfig(merged.avatarConfig);
+      }).catch(() => undefined);
+
+      await syncSocialFromCloud().catch(() => undefined);
+      await syncScoreboardFromCloud().catch(() => undefined);
+
+      startCloudCoopSync(() => {
+        if (state.screen === 'home') render();
+        else if (state.socialOpen) patchHomeOverlays();
+      });
     } catch (err) {
       console.warn('[ChronoPin] Firebase init skipped:', err);
     }
-  }
-  render();
+  })();
 }
 
 void bootstrap();

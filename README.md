@@ -26,7 +26,8 @@ Guess **where** you are. In time modes, also guess **when**.
 
 **Login & Account**
 - **Login-Maske** beim Start — Name eingeben (neu = neuer Spieler, bekannt = Welcome back / Reclaim auf neuem Gerät)
-- Firebase **`loginNames`** für eindeutige Namen · **12s Timeout** + Offline-Fallback bei hängendem Login
+- **Sofort-Login:** Profil wird lokal gespeichert, UI reagiert sofort — Firebase-Sync läuft im Hintergrund (kein Hängen mehr)
+- Firebase **`loginNames`** für eindeutige Namen · **6s Timeout** + Offline-Fallback bei langsamem Firebase
 - **Admin-Panel** (⚙) für Spieler **Admin**, **Dary**, **Daryoush**: Spieler löschen, Stash-Items & Bonus-Herzen vergeben
 - **Factory Reset** in Player Info (Test)
 
@@ -57,7 +58,7 @@ Guess **where** you are. In time modes, also guess **when**.
 
 ### Kürzlich behoben (Polish-Pass)
 
-- Login hängt nicht mehr · Freundes-Suche ohne Fokus-Verlust · Admin-Panel
+- Login hängt nicht mehr · Sofort-Login + Hintergrund-Sync · Freundes-Suche ohne Fokus-Verlust · Admin-Panel
 - Name-Reclaim auf neuem Gerät · Scoreboard Cloud-Sync
 - Co-op Quit killt Partner-Match nicht mehr · Host Start-Banner
 - Demo-/Prototype-Texte aus UI entfernt · Daily nutzt 3 Herzen

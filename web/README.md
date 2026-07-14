@@ -27,8 +27,9 @@ npm run preview        # serve dist/ locally
 1. **Login screen** — enter your name (max 20 chars)
 2. New name → new player · existing name → welcome back (Firebase `loginNames`)
 3. Same name on a **new device** reclaims your cloud profile automatically
-4. Avatar & name editable later under **Player info**
-5. Login has a **12s timeout** — falls back to offline if Firebase is slow
+4. **Instant login:** profile saves locally first — the home screen appears immediately; cloud sync runs in the background
+5. Avatar & name editable later under **Player info**
+6. If Firebase is slow or unavailable, you still get in (offline mode with optional notice)
 
 Without Firebase (no `.env`), everything runs offline in `localStorage`.
 

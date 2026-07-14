@@ -24,13 +24,14 @@ interface LoginNameRecord {
   updatedAt?: number;
 }
 
-const LOGIN_TIMEOUT_MS = 12_000;
+const LOGIN_TIMEOUT_MS = 6_000;
+const AUTH_TIMEOUT_MS = 6_000;
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error(`${label} timed out — try again.`)), ms);
+      setTimeout(() => reject(new Error(`${label} timed out`)), ms);
     }),
   ]);
 }
@@ -44,17 +45,26 @@ async function reclaimNameOnDevice(
   record: LoginNameRecord,
 ): Promise<LoginResult> {
   const nameRef = doc(getFirebaseDb(), 'loginNames', searchName);
-  const remote = await pullProfileFromFirestore(previousUid);
+  let remote: Partial<PlayerProfile> | null = null;
+  try {
+    remote = await withTimeout(pullProfileFromFirestore(previousUid), LOGIN_TIMEOUT_MS, 'Profile load');
+  } catch {
+    remote = null;
+  }
 
-  await setDoc(
-    nameRef,
-    {
-      uid: currentUid,
-      displayName,
-      createdAt: record.createdAt ?? Date.now(),
-      updatedAt: Date.now(),
-    },
-    { merge: true },
+  await withTimeout(
+    setDoc(
+      nameRef,
+      {
+        uid: currentUid,
+        displayName,
+        createdAt: record.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+      },
+      { merge: true },
+    ),
+    LOGIN_TIMEOUT_MS,
+    'Name reclaim',
   );
 
   if (previousUid !== currentUid) {
@@ -82,17 +92,53 @@ async function reclaimNameOnDevice(
   };
 
   saveProfile(profile.name, profile.avatarConfig, currentUid);
-  await pushProfileToFirestore(profile, currentUid);
+  void pushProfileToFirestore(profile, currentUid).catch((err) =>
+    console.warn('[ChronoPin] Reclaim profile sync failed:', err),
+  );
   return { ok: true, profile, returning: true };
 }
 
+async function syncCloudLogin(
+  profile: PlayerProfile,
+  uid: string,
+  searchName: string,
+  displayName: string,
+  createLoginName: boolean,
+): Promise<void> {
+  try {
+    if (createLoginName) {
+      await withTimeout(
+        setDoc(doc(getFirebaseDb(), 'loginNames', searchName), {
+          uid,
+          displayName,
+          createdAt: Date.now(),
+        } satisfies LoginNameRecord),
+        LOGIN_TIMEOUT_MS,
+        'Name registration',
+      );
+    }
+    await withTimeout(pushProfileToFirestore(profile, uid), LOGIN_TIMEOUT_MS, 'Profile save');
+  } catch (err) {
+    console.warn('[ChronoPin] Cloud login sync failed:', err);
+  }
+}
+
 async function loginWithNameCloud(name: string): Promise<LoginResult> {
-  const user = await withTimeout(ensureFirebaseAuth(), LOGIN_TIMEOUT_MS, 'Sign-in');
-  const uid = user?.uid ?? null;
+  const displayName = normalizeLoginName(name);
+  const searchName = nameToSearchKey(name);
+
+  let uid: string | null = null;
+  try {
+    const user = await withTimeout(ensureFirebaseAuth(), AUTH_TIMEOUT_MS, 'Sign-in');
+    uid = user?.uid ?? null;
+  } catch {
+    uid = null;
+  }
+
   if (!uid) {
     const detail = getLastFirebaseAuthError();
     console.warn('[ChronoPin] Firebase auth unavailable — continuing offline:', detail);
-    const profile = saveProfile(normalizeLoginName(name), getDefaultAvatarConfig());
+    const profile = saveProfile(displayName, getDefaultAvatarConfig());
     return {
       ok: true,
       profile,
@@ -104,8 +150,6 @@ async function loginWithNameCloud(name: string): Promise<LoginResult> {
     };
   }
 
-  const displayName = normalizeLoginName(name);
-  const searchName = nameToSearchKey(name);
   const nameRef = doc(getFirebaseDb(), 'loginNames', searchName);
 
   try {
@@ -116,10 +160,33 @@ async function loginWithNameCloud(name: string): Promise<LoginResult> {
       const linkedUid = record.uid;
 
       if (linkedUid !== uid) {
-        return reclaimNameOnDevice(displayName, searchName, linkedUid, uid, record);
+        try {
+          return await withTimeout(
+            reclaimNameOnDevice(displayName, searchName, linkedUid, uid, record),
+            LOGIN_TIMEOUT_MS,
+            'Account reclaim',
+          );
+        } catch (err) {
+          console.warn('[ChronoPin] Reclaim failed:', err);
+          const profile = saveProfile(displayName, getDefaultAvatarConfig(), uid);
+          void syncCloudLogin(profile, uid, searchName, displayName, false);
+          return {
+            ok: true,
+            profile,
+            returning: true,
+            offline: true,
+            authWarning: 'Cloud reclaim slow — profile saved locally. Reload to retry sync.',
+          };
+        }
       }
 
-      const remote = await pullProfileFromFirestore(linkedUid);
+      let remote: Partial<PlayerProfile> | null = null;
+      try {
+        remote = await withTimeout(pullProfileFromFirestore(linkedUid), LOGIN_TIMEOUT_MS, 'Profile load');
+      } catch {
+        remote = null;
+      }
+
       const avatarConfig = remote?.avatarConfig
         ? normalizeAvatarConfig(remote.avatarConfig)
         : getDefaultAvatarConfig();
@@ -133,40 +200,41 @@ async function loginWithNameCloud(name: string): Promise<LoginResult> {
       };
 
       saveProfile(profile.name, profile.avatarConfig, uid);
-      await pushProfileToFirestore(profile, uid);
+      void syncCloudLogin(profile, uid, searchName, displayName, false);
       return { ok: true, profile, returning: true };
     }
 
-    await setDoc(nameRef, {
-      uid,
-      displayName,
-      createdAt: Date.now(),
-    } satisfies LoginNameRecord);
-
     const profile = saveProfile(displayName, getDefaultAvatarConfig(), uid);
-    await pushProfileToFirestore(profile, uid);
+    void syncCloudLogin(profile, uid, searchName, displayName, true);
     return { ok: true, profile, returning: false };
   } catch (err) {
     console.warn('[ChronoPin] Cloud login failed:', err);
     const message = err instanceof Error ? err.message : 'Could not save your profile.';
     const code = (err as { code?: string })?.code;
+
     if (code === 'permission-denied') {
-      return {
-        ok: false,
-        error: 'Firestore access denied — publish the latest firestore.rules in Firebase Console.',
-      };
-    }
-    if (message.includes('timed out')) {
-      const profile = saveProfile(normalizeLoginName(name), getDefaultAvatarConfig());
+      const profile = saveProfile(displayName, getDefaultAvatarConfig(), uid);
       return {
         ok: true,
         profile,
         returning: false,
         offline: true,
-        authWarning: `${message} Continuing offline — reload to retry cloud sync.`,
+        authWarning:
+          'Firestore access denied — publish firestore.rules in Firebase Console. Playing offline for now.',
       };
     }
-    return { ok: false, error: message || 'Could not save your profile. Check Firebase rules and try again.' };
+
+    const profile = saveProfile(displayName, getDefaultAvatarConfig(), uid);
+    void syncCloudLogin(profile, uid, searchName, displayName, true);
+    return {
+      ok: true,
+      profile,
+      returning: false,
+      offline: true,
+      authWarning: message.includes('timed out')
+        ? 'Cloud sync is slow — you can play now. Reload later to retry online features.'
+        : 'Cloud sync pending — you can play now.',
+    };
   }
 }
 

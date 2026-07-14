@@ -8,6 +8,8 @@ import { getFirebaseAuth, isFirebaseConfigured } from './firebase';
 let authReady: Promise<User | null> | null = null;
 let lastAuthError: string | null = null;
 
+const AUTH_TIMEOUT_MS = 8_000;
+
 export function clearAuthReadyCache(): void {
   authReady = null;
   lastAuthError = null;
@@ -29,32 +31,53 @@ function mapAuthError(err: unknown): string {
   }
 }
 
+function waitForAuthUser(): Promise<User | null> {
+  const auth = getFirebaseAuth();
+  if (auth.currentUser) {
+    lastAuthError = null;
+    return Promise.resolve(auth.currentUser);
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (user: User | null, error?: string) => {
+      if (settled) return;
+      settled = true;
+      if (error) lastAuthError = error;
+      else if (user) lastAuthError = null;
+      resolve(user);
+    };
+
+    const timer = setTimeout(() => {
+      unsub();
+      finish(null, 'Sign-in timed out — try again.');
+    }, AUTH_TIMEOUT_MS);
+
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      clearTimeout(timer);
+      unsub();
+      if (user) {
+        finish(user);
+        return;
+      }
+      try {
+        const cred = await signInAnonymously(auth);
+        finish(cred.user);
+      } catch (err) {
+        lastAuthError = mapAuthError(err);
+        console.warn('[ChronoPin] Firebase anonymous auth failed:', err);
+        finish(null);
+      }
+    });
+  });
+}
+
 /** Anonymous sign-in — one Firebase uid per browser session (persisted by Firebase). */
 export function ensureFirebaseAuth(force = false): Promise<User | null> {
   if (!isFirebaseConfigured()) return Promise.resolve(null);
   if (authReady && !force) return authReady;
 
-  authReady = new Promise((resolve) => {
-    const auth = getFirebaseAuth();
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      unsub();
-      if (user) {
-        lastAuthError = null;
-        resolve(user);
-        return;
-      }
-      try {
-        const cred = await signInAnonymously(auth);
-        lastAuthError = null;
-        resolve(cred.user);
-      } catch (err) {
-        lastAuthError = mapAuthError(err);
-        console.warn('[ChronoPin] Firebase anonymous auth failed:', err);
-        resolve(null);
-      }
-    });
-  });
-
+  authReady = waitForAuthUser();
   return authReady;
 }
 
